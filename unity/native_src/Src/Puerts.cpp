@@ -322,15 +322,15 @@ V8_EXPORT const char* GetArrayBufferFromValue(v8::Isolate* Isolate, v8::Value *V
         {
             v8::ArrayBufferView * BuffView = v8::ArrayBufferView::Cast(Value);
             *Length = static_cast<int>(BuffView->ByteLength());
-            auto ABC = BuffView->Buffer()->GetContents();
-            return static_cast<char*>(ABC.Data()) + BuffView->ByteOffset();
+            auto ABC = BuffView->Buffer()->GetBackingStore();
+            return static_cast<char*>(ABC->Data()) + BuffView->ByteOffset();
         }
         else if (Value->IsArrayBuffer())
         {
             auto Ab = v8::ArrayBuffer::Cast(Value);
-            auto ABC = Ab->GetContents();
-            *Length = static_cast<int>(ABC.ByteLength());
-            return static_cast<char*>(ABC.Data());
+            auto ABC = Ab->GetBackingStore();
+            *Length = static_cast<int>(ABC->ByteLength());
+            return static_cast<char*>(ABC->Data());
         }
         else
         {
@@ -744,15 +744,15 @@ V8_EXPORT const char *GetArrayBufferFromResult(FResultInfo *ResultInfo, int *Len
     {
         v8::Local<v8::ArrayBufferView>  BuffView = Value.As<v8::ArrayBufferView>();
         *Length = static_cast<int>(BuffView->ByteLength());
-        auto ABC = BuffView->Buffer()->GetContents();
-        return static_cast<char*>(ABC.Data()) + BuffView->ByteOffset();
+        auto ABC = BuffView->Buffer()->GetBackingStore();
+        return static_cast<char*>(ABC->Data()) + BuffView->ByteOffset();
     }
     else if (Value->IsArrayBuffer())
     {
         auto Ab = v8::Local <v8::ArrayBuffer>::Cast(Value);
-        auto ABC = Ab->GetContents();
-        *Length = static_cast<int>(ABC.ByteLength());
-        return static_cast<char*>(ABC.Data());
+        auto ABC = Ab->GetBackingStore();
+        *Length = static_cast<int>(ABC->ByteLength());
+        return static_cast<char*>(ABC->Data());
     }
     else
     {
