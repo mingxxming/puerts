@@ -38,8 +38,7 @@
 #include "Blob/macOS/SnapshotBlob.h"
 #elif defined(PLATFORM_IOS)
 #include "Blob/iOS/arm64/SnapshotBlob.h"
-#endif
-#if defined(PLATFORM_LINUX)
+#elif defined(PLATFORM_LINUX)
 #include "Blob/Linux/SnapshotBlob.h"
 #endif
 
