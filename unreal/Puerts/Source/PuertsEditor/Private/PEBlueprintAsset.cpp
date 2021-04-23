@@ -51,6 +51,10 @@ bool UPEBlueprintAsset::LoadOrCreate(const FString& InName, const FString& InPat
     if (Blueprint) 
     {
         GeneratedClass = Blueprint->GeneratedClass;
+        if (auto TypeScriptGeneratedClass = Cast<UTypeScriptGeneratedClass>(GeneratedClass))
+        {
+            HasConstructor = TypeScriptGeneratedClass->HasConstructor;
+        }
         Package = Cast<UPackage>(Blueprint->GetOuter());
         if (Blueprint->ParentClass != ParentClass)
         {
@@ -269,6 +273,7 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
     {
         ParameterNames.Empty();
         ParameterTypes.Empty();
+        OverrideAdded.Add(InName);
         return;
     }
 
@@ -316,6 +321,7 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
                     }
                 );
             }
+            OverrideAdded.Add(InName);
             NeedSave = true;
         }
     }
@@ -412,6 +418,7 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
                 );
 
                 FunctionEntryNode = EventNode;
+                NeedSave = true;
             }
             else
             {
@@ -666,6 +673,12 @@ void UPEBlueprintAsset::RemoveNotExistedFunction()
                 return CustomEvent && !FunctionAdded.Contains(CustomEvent->CustomFunctionName);
                 });
             NeedSave = NeedSave || (RemovedCustomEvent > 0);
+
+            auto RemoveOverrideEvent = EventGraph->Nodes.RemoveAll([&](UEdGraphNode* GraphNode) {
+                UK2Node_Event* Event = Cast<UK2Node_Event>(GraphNode);
+                return Event && Event->bOverrideFunction && !OverrideAdded.Contains(Event->EventReference.GetMemberName());
+                });
+            NeedSave = NeedSave || (RemoveOverrideEvent > 0);
         }
     }
     FunctionAdded.Empty();
@@ -680,6 +693,7 @@ void UPEBlueprintAsset::Save()
         TypeScriptGeneratedClass->HasConstructor = HasConstructor;
         if (NeedSave)
         {
+            FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
             FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
             TArray<UPackage*> PackagesToSave;

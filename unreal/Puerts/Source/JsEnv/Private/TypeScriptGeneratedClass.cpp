@@ -1,9 +1,31 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+﻿/*
+* Tencent is pleased to support the open source community by making Puerts available.
+* Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+* Puerts is licensed under the BSD 3-Clause License, except for the third-party components listed in the file 'LICENSE' which may be subject to their corresponding license terms.
+* This file is subject to the terms and conditions defined in file 'LICENSE', which is part of this source code package.
+*/
 
 
 #include "TypeScriptGeneratedClass.h"
 #include "PropertyMacros.h"
 #include "JSGeneratedFunction.h"
+
+DEFINE_FUNCTION(UTypeScriptGeneratedClass::execCallJS)
+{
+    UFunction *Func = Stack.CurrentNativeFunction ? Stack.CurrentNativeFunction : Stack.Node;
+    check(Func);
+    //UE_LOG(LogTemp, Warning, TEXT("overrided function called, %s(%p)"), *Func->GetName(), Func);
+
+    UTypeScriptGeneratedClass *Class = Cast<UTypeScriptGeneratedClass>(Func->GetOuter());
+    if (Class)
+    {
+        auto PinedDynamicInvoker = Class->DynamicInvoker.Pin();
+        if (PinedDynamicInvoker)
+        {
+            PinedDynamicInvoker->InvokeTsMethod(Context, Func, Stack, RESULT_PARAM);
+        }
+    }
+}
 
 void UTypeScriptGeneratedClass::StaticConstructor(const FObjectInitializer& ObjectInitializer)
 {
@@ -39,8 +61,19 @@ void UTypeScriptGeneratedClass::ObjectInitialize(const FObjectInitializer& Objec
     auto PinedDynamicInvoker = DynamicInvoker.Pin();
     if (PinedDynamicInvoker)
     {
-        PinedDynamicInvoker->Construct(this, Object, Constructor, Prototype);
+        PinedDynamicInvoker->TsConstruct(this, Object);
     }
+}
+
+void UTypeScriptGeneratedClass::RedirectToTypeScript(UFunction* InFunction)
+{
+    if (InFunction->Script.Num() == 0)
+    {
+        InFunction->Script.Add(EX_EndFunctionParms);
+    }
+    InFunction->FunctionFlags |= FUNC_BlueprintCallable | FUNC_BlueprintEvent | FUNC_Public | FUNC_Native;
+    InFunction->SetNativeFunc(&UTypeScriptGeneratedClass::execCallJS);
+    AddNativeFunction(*InFunction->GetName(), &UTypeScriptGeneratedClass::execCallJS);
 }
 
 void UTypeScriptGeneratedClass::Bind()
@@ -65,12 +98,7 @@ void UTypeScriptGeneratedClass::Bind()
     for (TFieldIterator<UFunction> FuncIt(this, EFieldIteratorFlags::ExcludeSuper); FuncIt; ++FuncIt)
     {
         auto Function = *FuncIt;
-        if (Function->IsA<UJSGeneratedFunction>())
-        {
-            Function->FunctionFlags |= FUNC_BlueprintCallable | FUNC_BlueprintEvent | FUNC_Public | FUNC_Native;
-            Function->SetNativeFunc(&UJSGeneratedFunction::execCallJS);
-            AddNativeFunction(*Function->GetName(), &UJSGeneratedFunction::execCallJS);
-        }
+        RedirectToTypeScript(Function);
     }
 
     Super::Bind();

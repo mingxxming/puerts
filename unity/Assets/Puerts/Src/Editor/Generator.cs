@@ -465,7 +465,7 @@ namespace Puerts.Editor
                 return "ArrayBuffer";
             else if (type == typeof(object))
                 return "any";
-            else if (type == typeof(Delegate))
+            else if (type == typeof(Delegate) || type == typeof(Puerts.GenericDelegate))
                 return "Function";
             else if (type.IsByRef)
                 return "$Ref<" + GetTsTypeName(type.GetElementType()) + ">";
@@ -1052,7 +1052,8 @@ namespace Puerts.Editor
             var genTypes = configure["Puerts.BindingAttribute"].Select( kv => kv.Key)
                 .Where(o => o is Type)
                 .Cast<Type>()
-                .Where(t => !t.IsGenericTypeDefinition);
+                .Where(t => !t.IsGenericTypeDefinition)
+                .Distinct();
 
             var blittableCopyTypes = new HashSet<Type>(configure["Puerts.BlittableCopyAttribute"].Select(kv => kv.Key)
                 .Where(o => o is Type)

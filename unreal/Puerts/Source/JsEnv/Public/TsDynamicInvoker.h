@@ -5,18 +5,19 @@
 * This file is subject to the terms and conditions defined in file 'LICENSE', which is part of this source code package.
 */
 
-#include "DynamicDelegateProxy.h"
+#pragma once
 
-void UDynamicDelegateProxy::Fire()
-{
-    //Do Nothing
-}
+class UTypeScriptGeneratedClass;
 
-void UDynamicDelegateProxy::ProcessEvent(UFunction*, void* Parms)
+namespace puerts
 {
-    auto PinedDynamicInvoker = DynamicInvoker.Pin();
-    if (PinedDynamicInvoker && Owner.IsValid())
-    {
-        PinedDynamicInvoker->InvokeJsCallabck(this, Parms);
-    }
+
+class ITsDynamicInvoker
+{
+public:
+    virtual void TsConstruct(UTypeScriptGeneratedClass* Class, UObject* Object) = 0;
+
+    virtual void InvokeTsMethod(UObject *ContextObject, UFunction *Function, FFrame &Stack, void *RESULT_PARAM) = 0;
+};
+
 }
