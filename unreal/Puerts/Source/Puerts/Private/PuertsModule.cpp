@@ -13,7 +13,9 @@
 #include "Editor.h"
 #include "ISettingsModule.h"
 #include "ISettingsSection.h"
+#include "Internationalization/Regex.h"
 #endif
+#include "Commandlets/Commandlet.h"
 
 DEFINE_LOG_CATEGORY_STATIC(PuertsModule, Log, All);
 
@@ -83,18 +85,82 @@ public:
         }
     }
 
+    std::function<int(UObject*, int)> Selector;
+
     void SetJsEnvSelector(std::function<int(UObject*, int)> InSelector) override
     {
         if (Enabled && NumberOfJsEnv > 1 && JsEnvGroup.IsValid())
         {
             JsEnvGroup->SetJsEnvSelector(InSelector);
         }
+        Selector = InSelector;
     }
 
-	void MakeSharedJsEnv()
-	{
-		const UPuertsSetting& Settings = *GetDefault<UPuertsSetting>();
+    int32 GetDebuggerPortFromCommandLine()
+    {
+        int32 Result = -1;
 
+        /**
+         * get command line
+         */
+        TArray<FString> OutTokens;
+        TArray<FString> OutSwitches;
+        TMap<FString, FString> OutParams;
+        UCommandlet::ParseCommandLine(FCommandLine::Get(), OutTokens, OutSwitches, OutParams);
+
+#if WITH_EDITOR
+        static const auto GetPIEInstanceID = [](const TArray<FString>& InTokens) -> int32
+        {
+            static const int32 Start = FString{TEXT("PIEGameUserSettings")}.Len();
+            static const int32 BaseCount = FString{TEXT("PIEGameUserSettings.ini")}.Len();
+
+            const FString* TokenPtr = InTokens.FindByPredicate([](const FString& InToken) { return InToken.StartsWith(TEXT("GameUserSettingsINI="));});
+            if (TokenPtr == nullptr)
+            {
+                return INDEX_NONE;
+            }
+
+            const FRegexPattern GameUserSettingsPattern{TEXT("PIEGameUserSettings[0-9]+\\.ini")};
+            FRegexMatcher GameUserSettingsMatcher{GameUserSettingsPattern, *TokenPtr};
+            if (GameUserSettingsMatcher.FindNext())
+            {
+                const FString GameUserSettingsFile = GameUserSettingsMatcher.GetCaptureGroup(0);
+                return FCString::Atoi(*GameUserSettingsFile.Mid(Start, GameUserSettingsFile.Len() - BaseCount));
+            }
+
+            return INDEX_NONE;
+        };
+
+        const bool bPIEGame = OutSwitches.Find(TEXT("PIEVIACONSOLE")) != INDEX_NONE && OutSwitches.Find(TEXT("game")) != INDEX_NONE;
+        if (bPIEGame)
+        {
+            const int32 Index = GetPIEInstanceID(OutTokens);
+            if (OutSwitches.Find(TEXT("server")) != INDEX_NONE)
+            {
+                Result += 999;     // for server, we add 999, 8080 -> 9079
+            }
+            else 
+            { 
+                Result += 10 * (Index + 1); //  for client, we add 10 for each new process, 8080 -> 8090, 8100, 8110
+            }
+        }
+#endif
+
+        // we can also specify the debug port via command line, -JsEnvDebugPort
+
+        static const FString DebugPortParam{TEXT("JsEnvDebugPort")};
+        if (OutParams.Contains(DebugPortParam))
+        {
+            Result = FCString::Atoi(*OutParams[DebugPortParam]);
+        }
+
+        return Result;
+    }
+
+    void MakeSharedJsEnv()
+    {
+        const UPuertsSetting& Settings = *GetDefault<UPuertsSetting>();
+        
         JsEnv.Reset();
         JsEnvGroup.Reset();
 
@@ -104,11 +170,16 @@ public:
         {
             if (Settings.DebugEnable)
             {
-                JsEnvGroup = MakeShared<puerts::FJsEnvGroup>(NumberOfJsEnv, std::make_unique<puerts::DefaultJSModuleLoader>(TEXT("JavaScript")), std::make_shared<puerts::FDefaultLogger>(), Settings.DebugPort);
+                JsEnvGroup = MakeShared<puerts::FJsEnvGroup>(NumberOfJsEnv, std::make_unique<puerts::DefaultJSModuleLoader>(TEXT("JavaScript")), std::make_shared<puerts::FDefaultLogger>(), DebuggerPortFromCommandLine < 0 ? Settings.DebugPort : DebuggerPortFromCommandLine);
             }
             else
             {
                 JsEnvGroup = MakeShared<puerts::FJsEnvGroup>(NumberOfJsEnv);
+            }
+
+            if (Selector)
+            {
+                JsEnvGroup->SetJsEnvSelector(Selector);
             }
 
             //这种不支持等待
@@ -124,7 +195,7 @@ public:
         {
             if (Settings.DebugEnable)
             {
-                JsEnv = MakeShared<puerts::FJsEnv>(std::make_unique<puerts::DefaultJSModuleLoader>(TEXT("JavaScript")), std::make_shared<puerts::FDefaultLogger>(), Settings.DebugPort);
+                JsEnv = MakeShared<puerts::FJsEnv>(std::make_unique<puerts::DefaultJSModuleLoader>(TEXT("JavaScript")), std::make_shared<puerts::FDefaultLogger>(), DebuggerPortFromCommandLine < 0 ? Settings.DebugPort : DebuggerPortFromCommandLine);
             }
             else
             {
@@ -139,7 +210,7 @@ public:
             JsEnv->RebindJs();
             UE_LOG(PuertsModule, Log, TEXT("Normal Mode started!"));
         }
-	}
+    }
 
 private:
     TSharedPtr<puerts::FJsEnv> JsEnv;
@@ -149,6 +220,8 @@ private:
     int32 NumberOfJsEnv = 1;
 
     TSharedPtr<puerts::FJsEnvGroup> JsEnvGroup;
+
+    int32 DebuggerPortFromCommandLine = -1;
 };
 
 IMPLEMENT_MODULE( FPuertsModule, Puerts)
@@ -210,6 +283,25 @@ void FPuertsModule::RegisterSettings()
         SettingsSection->OnModified().BindRaw(this, &FPuertsModule::HandleSettingsSaved);
     }
 #endif
+    UPuertsSetting& Settings = *GetMutableDefault<UPuertsSetting>();
+    const TCHAR* SectionName = TEXT("/Script/Puerts.PuertsSetting");
+    const FString PuertsConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultPuerts.ini"));
+    if (GConfig->DoesSectionExist(SectionName, PuertsConfigIniPath))
+    {
+        GConfig->GetBool(SectionName, TEXT("Enable"), Settings.Enable, PuertsConfigIniPath);
+        GConfig->GetBool(SectionName, TEXT("DebugEnable"), Settings.DebugEnable, PuertsConfigIniPath);
+        GConfig->GetBool(SectionName, TEXT("WaitDebugger"), Settings.WaitDebugger, PuertsConfigIniPath);
+        if (!GConfig->GetInt(SectionName, TEXT("DebugPort"), Settings.DebugPort, PuertsConfigIniPath))
+        {
+            Settings.DebugPort = 8080;
+        }
+        if (!GConfig->GetInt(SectionName, TEXT("NumberOfJsEnv"), Settings.NumberOfJsEnv, PuertsConfigIniPath))
+        {
+            Settings.NumberOfJsEnv = 1;
+        }
+    }
+
+    DebuggerPortFromCommandLine = GetDebuggerPortFromCommandLine();
 }
 
 void FPuertsModule::UnregisterSettings()
@@ -234,6 +326,10 @@ void FPuertsModule::StartupModule()
     {
         Enable();
     }
+
+    //SetJsEnvSelector([this](UObject* Obj, int Size){
+    //    return 1;
+    //    });
 }
 
 void FPuertsModule::Enable()

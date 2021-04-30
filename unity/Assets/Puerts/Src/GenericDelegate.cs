@@ -111,6 +111,7 @@ namespace Puerts
             {
                 return maybeOne.Target as GenericDelegate;
             }
+            jsEnv.RemoveFromPending(ptr);
             GenericDelegate genericDelegate = new GenericDelegate(ptr, jsEnv);
             nativePtrToGenericDelegate[ptr] = new WeakReference(genericDelegate);
             return genericDelegate;
@@ -309,6 +310,7 @@ namespace Puerts
             {
                return maybeOne.Target as JSObject;
             }
+            jsEnv.RemoveJSObjectFromPendingRelease(ptr);
             JSObject jsObject = new JSObject(ptr, jsEnv);
             nativePtrToJSObject[ptr] = new WeakReference(jsObject);
             return jsObject;

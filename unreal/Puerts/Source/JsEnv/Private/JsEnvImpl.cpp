@@ -597,10 +597,10 @@ void FJsEnvImpl::LowMemoryNotification()
 
 void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedClass, bool RebindObject)
 {
-    auto Iter = BindInfoMap.find(TypeScriptGeneratedClass);
-    if (Iter == BindInfoMap.end() || TypeScriptGeneratedClass->ReBind)//create and link
+    //auto Iter = BindInfoMap.find(TypeScriptGeneratedClass);
+
+    //if (Iter == BindInfoMap.end() || Iter->second.Rebind)//create and link
     {
-        RebindObject = RebindObject || TypeScriptGeneratedClass->ReBind;
         auto Package = Cast<UPackage>(TypeScriptGeneratedClass->GetOuter());
         if (!Package)
         {
@@ -662,7 +662,7 @@ void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedCl
                         TypeScriptGeneratedClass->DynamicInvoker = TsDynamicInvoker;
                         //BindInfo.Prototype.Reset(Isolate, Proto);
                         TypeScriptGeneratedClass->ClassConstructor = &UTypeScriptGeneratedClass::StaticConstructor;
-                        TypeScriptGeneratedClass->ReBind = false;
+                        //BindInfo.Rebind = false;
 
                         v8::Local<v8::Value> VCtor;
                         if (Proto->Get(Context, FV8Utils::ToV8String(Isolate, "Constructor")).ToLocal(&VCtor) && VCtor->IsFunction())
@@ -798,34 +798,13 @@ void FJsEnvImpl::ReloadModule(FName ModuleName, const FString& JsSource)
 {
     //Logger->Info(FString::Printf(TEXT("start reload js module [%s]"), *ModuleName.ToString()));
     JsHotReload(ModuleName, JsSource);
-    UTypeScriptGeneratedClass* ToReload = nullptr;
-    for (auto Iter = BindInfoMap.begin(); Iter != BindInfoMap.end(); Iter++)
-    {
-        if (ModuleName == Iter->second.Name)
-        {
-            Logger->Info(FString::Printf(TEXT("reload blueprint module [%s]"), *Iter->second.Name.ToString()));
-            Iter->first->ReBind = true;
-            ToReload = Iter->first;
-            break;
-        }
-    }
-
-    if (ToReload)
-    {
-        for (auto Iter = BindInfoMap.begin(); Iter != BindInfoMap.end(); Iter++)
-        {
-            if (Iter->first != ToReload && Iter->first->IsChildOf(ToReload))
-            {
-                Logger->Info(FString::Printf(TEXT("reload blueprint module [%s]"), *Iter->second.Name.ToString()));
-                Iter->first->ReBind = true;
-            }
-        }
-    }
 }
 
 void FJsEnvImpl::TryBindJs(const class UObjectBase *InObject)
 {
     UObjectBaseUtility *Object = (UObjectBaseUtility*)InObject;
+
+    bool IsCDO = Object->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject);
 
     //if (!Object->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
     {
@@ -833,10 +812,36 @@ void FJsEnvImpl::TryBindJs(const class UObjectBase *InObject)
 
         UClass *Class = InObject->GetClass();
 
-        if (auto TypeScriptGeneratedClass = Cast<UTypeScriptGeneratedClass>(Class))
+        auto TypeScriptGeneratedClass = Cast<UTypeScriptGeneratedClass>(Class);
+
+        if (UNLIKELY(TypeScriptGeneratedClass))
         {
-            MakeSureInject(TypeScriptGeneratedClass, false);
+            if (UNLIKELY(TypeScriptGeneratedClass->InjectNotFinished))
+            {
+                if (IsCDO)
+                {
+                    if (BindInfoMap.find(TypeScriptGeneratedClass) == BindInfoMap.end() && !TypeScriptGeneratedClass->NotSupportInject())
+                    {
+                        //UE_LOG(LogTemp, Error, TEXT("CDO MakeSureInject %s %s %d %p %p %p"), *TypeScriptGeneratedClass->GetName(), *InObject->GetFName().ToString(),
+                        //    Object->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject), InObject, TypeScriptGeneratedClass, this);
+                        MakeSureInject(TypeScriptGeneratedClass, false);
+                    }
+                }
+                else
+                {
+                    for (TFieldIterator<UFunction> FuncIt(TypeScriptGeneratedClass, EFieldIteratorFlags::ExcludeSuper); FuncIt; ++FuncIt)
+                    {
+                        auto Function = *FuncIt;
+                        Function->FunctionFlags |= FUNC_BlueprintCallable | FUNC_BlueprintEvent | FUNC_Public | FUNC_Native;
+                    }
+                    TypeScriptGeneratedClass->InjectNotFinished = false;
+                }
+            }
         }
+        //else if (UNLIKELY(Class == UTypeScriptGeneratedClass::StaticClass()))
+        //{
+        //    ((UTypeScriptGeneratedClass *)InObject)->DynamicInvoker = TsDynamicInvoker;
+        //}
     }
 }
 
@@ -846,7 +851,10 @@ void FJsEnvImpl::RebindJs()
     {
         UTypeScriptGeneratedClass* Class = *It;
         
-        MakeSureInject(Class, false);
+        if (!Class->NotSupportInject())
+        {
+            MakeSureInject(Class, true);
+        }
     }
 }
 
@@ -1220,6 +1228,11 @@ void FJsEnvImpl::InvokeTsMethod(UObject *ContextObject, UFunction *Function, FFr
                 *Function->GetName(), ContextObject, *GetExecutionException(Isolate, &TryCatch)));
         }
     }
+}
+
+void FJsEnvImpl::NotifyReBind(UTypeScriptGeneratedClass* Class)
+{
+    MakeSureInject(Class, false);
 }
 
 void FJsEnvImpl::ExecuteDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, const v8::FunctionCallbackInfo<v8::Value>& Info, void *DelegatePtr)
