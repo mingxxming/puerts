@@ -103,7 +103,7 @@ public:
 
     v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, PropertyMacro* KeyProperty, PropertyMacro* ValueProperty, FScriptMap *Ptr, bool PassByPointer) override;
 
-    v8::Local<v8::Value> FindOrAddDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner, PropertyMacro* Property, void *DelegatePtr) override;
+    v8::Local<v8::Value> FindOrAddDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner, PropertyMacro* Property, void *DelegatePtr, bool PassByPointer) override;
 
     bool AddToDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void *DelegatePtr, v8::Local<v8::Function> JsFunction) override;
 
@@ -141,7 +141,7 @@ public:
     }
 
 public:
-#if ENGINE_MINOR_VERSION > 22
+#if ENGINE_MINOR_VERSION > 22 || ENGINE_MAJOR_VERSION > 4
     void OnUObjectArrayShutdown() override
     {
         GUObjectArray.RemoveUObjectDeleteListener(static_cast<FUObjectArray::FUObjectDeleteListener*>(this));
@@ -174,7 +174,9 @@ private:
 
     void NewContainer(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    v8::Local<v8::FunctionTemplate> GetTemplateOfClass(UStruct *Class);
+    v8::Local<v8::FunctionTemplate> GetTemplateOfClass(UStruct *Class, bool &Existed);
+
+    v8::Local<v8::Function> GetJsClass(UStruct *Class, v8::Local<v8::Context> Context);
 
     v8::Local<v8::FunctionTemplate> GetTemplateOfClass(const JSClassDefinition* ClassDefinition);
 
@@ -366,6 +368,7 @@ private:
         DelegatePropertyMacro *DelegateProperty;
         MulticastDelegatePropertyMacro *MulticastDelegateProperty;
         UFunction *SignatureFunction;
+        bool PassByPointer;
         UDynamicDelegateProxy *Proxy;//for delegate
         TSet<UDynamicDelegateProxy*> Proxys; // for MulticastDelegate
     };
@@ -404,11 +407,12 @@ private:
     {
         FName Name;
         v8::UniquePersistent<v8::Function> Constructor;
+        v8::UniquePersistent<v8::Object> Prototype;
     };
 
     std::map<UTypeScriptGeneratedClass*, FBindInfo> BindInfoMap;
 
-    void MakeSureInject(UTypeScriptGeneratedClass* Class, bool RebindObject);
+    void MakeSureInject(UTypeScriptGeneratedClass* Class, bool ForceReinject, bool RebindObject);
 
     TSharedPtr<DynamicInvokerImpl> DynamicInvoker;
 

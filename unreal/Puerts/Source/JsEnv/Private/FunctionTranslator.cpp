@@ -7,6 +7,37 @@
 
 #include "FunctionTranslator.h"
 #include "V8Utils.h"
+#include "Misc/DefaultValueHelper.h"
+
+static TMap<FName, TMap<FName, TMap<FName, FString>>> ParamDefaultMetas;
+
+static TMap<FName, TMap<FName, FString>> *PC = nullptr;
+static TMap<FName, FString> *PF = nullptr;
+
+PRAGMA_DISABLE_OPTIMIZATION
+static int ParamDefaultMetasInit()
+{
+    //PC = &ParamDefaultMetas.Add(TEXT("MainObject"));
+    //PF = &PC->Add(TEXT("DefaultTest"));
+    //PF->Add(TEXT("Str"), TEXT("i am default"));
+    //PF->Add(TEXT("I"), TEXT("10"));
+    //PF->Add(TEXT("Vec"), TEXT("1.100000,2.200000,3.300000"));
+#include "../Puerts/InitParamDefaultMetas.inl"
+}
+PRAGMA_ENABLE_OPTIMIZATION
+
+int gDummy_ParamDefaultMetasInit_Ret = ParamDefaultMetasInit();
+
+TMap<FName, FString> * GetParamDefaultMetaFor(UFunction *InFunction)
+{
+    UClass *OuterClass = InFunction->GetOuterUClass();
+    auto ClassParamDefaultMeta = ParamDefaultMetas.Find(OuterClass->GetFName());
+    if (ClassParamDefaultMeta)
+    {
+        return ClassParamDefaultMeta->Find(InFunction->GetFName());
+    }
+    return nullptr;
+}
 
 namespace puerts
 {
@@ -69,6 +100,73 @@ FFunctionTranslator::FFunctionTranslator(UFunction *InFunction)
             Arguments.push_back(FPropertyTranslator::Create(Property));
         }
     }
+
+    ArgumentDefaultValues = nullptr;
+
+    TMap<FName, FString> *MetaMap = GetParamDefaultMetaFor(InFunction);
+    if (MetaMap)
+    {
+        for (TFieldIterator<PropertyMacro> ParamIt(Function); ParamIt; ++ParamIt)
+        {
+            auto Property = *ParamIt;
+            if (Property->PropertyFlags & CPF_Parm)
+            {
+                if (!(Property->PropertyFlags & CPF_ReturnParm))
+                {
+                    //const FName MetadataCppDefaultValueKey(*(FString(TEXT("CPP_Default_")) + Property->GetName()));
+                    FString *DefaultValuePtr = nullptr;
+                    DefaultValuePtr = MetaMap->Find(Property->GetFName());
+                    if (DefaultValuePtr && !DefaultValuePtr->IsEmpty())
+                    {
+                        //UE_LOG(LogTemp, Warning, TEXT("Meta %s %s"), *Property->GetFName().ToString(), **DefaultValuePtr);
+                        if (!ArgumentDefaultValues)
+                        {
+                            ArgumentDefaultValues = FMemory::Malloc(ParamsBufferSize, 16);
+                            InFunction->InitializeStruct(ArgumentDefaultValues);
+                        }
+
+                        void *PropValuePtr = Property->ContainerPtrToValuePtr<void>(ArgumentDefaultValues);
+
+                        if (const StructPropertyMacro* StructProp = CastFieldMacro<StructPropertyMacro>(Property))
+                        {
+                            if (StructProp->Struct == TBaseStructure<FVector>::Get())
+                            {
+                                FVector* Vector = (FVector*)PropValuePtr;
+                                FDefaultValueHelper::ParseVector(**DefaultValuePtr, *Vector);
+                                return;
+                            }
+                            else if (StructProp->Struct == TBaseStructure<FVector2D>::Get())
+                            {
+                                FVector2D* Vector2D = (FVector2D*)PropValuePtr;
+                                FDefaultValueHelper::ParseVector2D(**DefaultValuePtr, *Vector2D);
+                                return;
+                            }
+                            else if (StructProp->Struct == TBaseStructure<FRotator>::Get())
+                            {
+                                FRotator* Rotator = (FRotator*)PropValuePtr;
+                                FDefaultValueHelper::ParseRotator(**DefaultValuePtr, *Rotator);
+                                return;
+                            }
+                            else if (StructProp->Struct == TBaseStructure<FColor>::Get())
+                            {
+                                FColor* Color = (FColor*)PropValuePtr;
+                                FDefaultValueHelper::ParseColor(**DefaultValuePtr, *Color);
+                                return;
+                            }
+                            else if (StructProp->Struct == TBaseStructure<FLinearColor>::Get())
+                            {
+                                FLinearColor* LinearColor = (FLinearColor*)PropValuePtr;
+                                FDefaultValueHelper::ParseLinearColor(**DefaultValuePtr, *LinearColor);
+                                return;
+                            }
+                        }
+
+                        Property->ImportText(**DefaultValuePtr, PropValuePtr, PPF_None, nullptr);
+                    }
+                }
+            }
+        }
+    }
 }
 
 v8::Local<v8::FunctionTemplate> FFunctionTranslator::ToFunctionTemplate(v8::Isolate* Isolate)
@@ -113,7 +211,11 @@ void FFunctionTranslator::Call(v8::Isolate* Isolate, v8::Local<v8::Context>& Con
     if (Params) CallFunction->InitializeStruct(Params);
     for (int i = 0; i < Arguments.size(); ++i)
     {
-        if (!Arguments[i]->JsToUEInContainer(Isolate, Context, Info[i], Params, false))
+        if (UNLIKELY(ArgumentDefaultValues && Info[i]->IsUndefined()))
+        {
+            Arguments[i]->Property->CopyCompleteValue_InContainer(Params, ArgumentDefaultValues);
+        }
+        else if (!Arguments[i]->JsToUEInContainer(Isolate, Context, Info[i], Params, false))
         {
             return;
         }
@@ -302,7 +404,11 @@ void FExtensionMethodTranslator::CallExtension(v8::Isolate* Isolate, v8::Local<v
 
     for (int i = 1; i < Arguments.size(); ++i)
     {
-        if (!Arguments[i]->JsToUEInContainer(Isolate, Context, Info[i - 1], Params, false))
+        if (UNLIKELY(ArgumentDefaultValues && Info[i - 1]->IsUndefined()))
+        {
+            Arguments[i]->Property->CopyCompleteValue_InContainer(Params, ArgumentDefaultValues);
+        }
+        else if (!Arguments[i]->JsToUEInContainer(Isolate, Context, Info[i - 1], Params, false))
         {
             return;
         }

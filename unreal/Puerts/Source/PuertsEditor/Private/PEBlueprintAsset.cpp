@@ -1,5 +1,9 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
+ï»¿/*
+* Tencent is pleased to support the open source community by making Puerts available.
+* Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+* Puerts is licensed under the BSD 3-Clause License, except for the third-party components listed in the file 'LICENSE' which may be subject to their corresponding license terms.
+* This file is subject to the terms and conditions defined in file 'LICENSE', which is part of this source code package.
+*/
 
 #include "PEBlueprintAsset.h"
 #include "Modules/ModuleManager.h"
@@ -22,9 +26,12 @@
 #include "K2Node_InputAxisEvent.h"
 #include "K2Node_InputAction.h"
 #include "K2Node_CallFunction.h"
+#include "ScopedTransaction.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "TypeScriptGeneratedClass.h"
 #include "TypeScriptBlueprint.h"
+
+#define LOCTEXT_NAMESPACE "UPEBlueprintAsset"
 
 UClass* FindClass(const TCHAR* ClassName)
 {
@@ -48,7 +55,7 @@ bool UPEBlueprintAsset::LoadOrCreate(const FString& InName, const FString& InPat
     //UE_LOG(LogTemp, Warning, TEXT("LoadOrCreate.PackageName: %s"), *PackageName);
 
     Blueprint = LoadObject<UBlueprint>(nullptr, *PackageName, nullptr, LOAD_NoWarn | LOAD_NoRedirects);
-    if (Blueprint) 
+    if (Blueprint)
     {
         GeneratedClass = Blueprint->GeneratedClass;
         if (auto TypeScriptGeneratedClass = Cast<UTypeScriptGeneratedClass>(GeneratedClass))
@@ -111,7 +118,7 @@ bool UPEBlueprintAsset::LoadOrCreate(const FString& InName, const FString& InPat
     }
 }
 
-bool IsImplementationDesiredAsFunction(UBlueprint* InBlueprint, const UFunction* OverrideFunc) 
+bool IsImplementationDesiredAsFunction(UBlueprint* InBlueprint, const UFunction* OverrideFunc)
 {
     // If the original function was created in a parent blueprint, then prefer a BP function
     if (OverrideFunc)
@@ -134,11 +141,15 @@ bool IsImplementationDesiredAsFunction(UBlueprint* InBlueprint, const UFunction*
 
 static FEdGraphPinType ToFEdGraphPinType(FPEGraphPinType InGraphPinType, FPEGraphTerminalType InPinValueType)
 {
-    if ((EPinContainerType)InGraphPinType.PinContainerType == EPinContainerType::None && InGraphPinType.PinSubCategoryObject)
+    if ((EPinContainerType)InGraphPinType.PinContainerType == EPinContainerType::None && InGraphPinType.PinSubCategoryObject && InGraphPinType.PinCategory == UEdGraphSchema_K2::PC_Object)
     {
         if (InGraphPinType.PinSubCategoryObject->IsA<UScriptStruct>())
         {
             InGraphPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+        }
+        else if (InGraphPinType.PinSubCategoryObject->IsA<UEnum>())
+        {
+            InGraphPinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
         }
         else
         {
@@ -152,11 +163,15 @@ static FEdGraphPinType ToFEdGraphPinType(FPEGraphPinType InGraphPinType, FPEGrap
     {
         PinType.PinValueType.TerminalCategory = InPinValueType.PinCategory;
         PinType.PinValueType.TerminalSubCategoryObject = InPinValueType.PinSubCategoryObject;
-        if (InPinValueType.PinSubCategoryObject)
+        if (InPinValueType.PinSubCategoryObject && InPinValueType.PinCategory == UEdGraphSchema_K2::PC_Object)
         {
             if (InPinValueType.PinSubCategoryObject->IsA<UScriptStruct>())
             {
                 PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Struct;
+            }
+            else if (InPinValueType.PinSubCategoryObject->IsA<UEnum>())
+            {
+                PinType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Byte;
             }
             else
             {
@@ -187,7 +202,7 @@ static TArray<UK2Node_EditablePinBase*> GatherAllResultNodes(UK2Node_EditablePin
     }
     return Result;
 }
-#if ENGINE_MINOR_VERSION <= 23
+#if ENGINE_MINOR_VERSION <= 23 && ENGINE_MAJOR_VERSION < 5
 UFunction* GetInterfaceFunction(UBlueprint* Blueprint, const FName FuncName)
 {
     UFunction* Function = nullptr;
@@ -269,14 +284,6 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
 
     UFunction* Function = GeneratedClass->FindFunctionByName(InName, EIncludeSuperFlag::ExcludeSuper);
 
-    if (ParentFunction && Function)
-    {
-        ParameterNames.Empty();
-        ParameterTypes.Empty();
-        OverrideAdded.Add(InName);
-        return;
-    }
-
 	TArray<FName> AxisNames;
 	TArray<FName> ActionNames;
 	GetDefault<UInputSettings>()->GetAxisNames(AxisNames);
@@ -286,14 +293,14 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
     bool IsCustomEvent = false;
 
     // Create the function graph.
-    
+
     const bool bUserCreated = true;
     if (ParentFunction)
     {
         //UE_LOG(LogTemp, Warning, TEXT("Override Function %s"), *ParentFunction->GetName());
         //FBlueprintEditorUtils::AddFunctionGraph(Blueprint, FunctionGraph, bUserCreated, ParentFunction);
         UFunction* OverrideFunc = nullptr;
-#if ENGINE_MINOR_VERSION <= 23
+#if ENGINE_MINOR_VERSION <= 23 && ENGINE_MAJOR_VERSION < 5
         UClass* const OverrideFuncClass = GetOverrideFunctionClass(Blueprint, InName, &OverrideFunc);
 #else
         UClass* const OverrideFuncClass = FBlueprintEditorUtils::GetOverrideFunctionClass(Blueprint, InName, &OverrideFunc);
@@ -306,9 +313,9 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
         {
             // Add to event graph
             FName EventName = OverrideFunc->GetFName();
-            //UK2Node_Event* ExistingNode = FBlueprintEditorUtils::FindOverrideForFunction(Blueprint, OverrideFuncClass, EventName);
+            UK2Node_Event* ExistingNode = FBlueprintEditorUtils::FindOverrideForFunction(Blueprint, OverrideFuncClass, EventName);
 
-            //if (!ExistingNode)
+            if (!ExistingNode && !Function)
             {
                 UK2Node_Event* NewEventNode = FEdGraphSchemaAction_K2NewNode::SpawnNode<UK2Node_Event>(
                     EventGraph,
@@ -320,10 +327,30 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
                         NewInstance->bOverrideFunction = true;
                     }
                 );
+                NeedSave = true;
             }
             OverrideAdded.Add(InName);
-            NeedSave = true;
         }
+        else
+        {
+            if (FunctionAdded.Contains(InName)) return;
+            UEdGraph* const ExistingGraph = FindObject<UEdGraph>(Blueprint, *InName.ToString());
+            if (!ExistingGraph)
+            {
+                const FScopedTransaction Transaction(LOCTEXT("CreateOverrideFunctionGraph", "Create Override Function Graph"));
+                Blueprint->Modify();
+                // Implement the function graph
+                UEdGraph* const NewGraph = FBlueprintEditorUtils::CreateNewGraph(Blueprint, InName, UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+                FBlueprintEditorUtils::AddFunctionGraph(Blueprint, NewGraph, /*bIsUserCreated=*/ false, OverrideFuncClass);
+                NewGraph->Modify();
+                NeedSave = true;
+            }
+            FunctionAdded.Add(InName);
+        }
+
+        ParameterNames.Empty();
+        ParameterTypes.Empty();
+        return;
     }
     else if (AxisNames.Contains(InName))
     {
@@ -397,7 +424,7 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
         {
             if (EventGraph && !Iter)
             {
-                //´¦Àí±êÇ©¸Ä±äµÄÇé¿ö
+                //å¤„ç†æ ‡ç­¾æ”¹å˜çš„æƒ…å†µ
                 Blueprint->FunctionGraphs.RemoveAll([&](UEdGraph* Graph) { return Graph->GetFName() == InName; });
 
                 UEdGraph* ExistingGraph = FindObject<UEdGraph>(Blueprint, *(InName.ToString()));
@@ -441,7 +468,7 @@ void UPEBlueprintAsset::AddFunction(FName InName, bool IsVoid, FPEGraphPinType I
             //FBlueprintEditorUtils::RemoveGraph(Blueprint, *ExistedGraph);
 	        FunctionGraph = *ExistedGraph;
         }
-        else 
+        else
         {
             UEdGraph* EventGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint);
             if (EventGraph)
@@ -597,9 +624,9 @@ void UPEBlueprintAsset::ClearParameter()
     ParameterTypes.Empty();
 }
 
-void UPEBlueprintAsset::AddMemberVariable(FName NewVarName, FPEGraphPinType InGraphPinType, FPEGraphTerminalType InPinValueType, int32 InFlags)
+void UPEBlueprintAsset::AddMemberVariable(FName NewVarName, FPEGraphPinType InGraphPinType, FPEGraphTerminalType InPinValueType, int32 InLFlags, int32 InHFlags, int32 InLifetimeCondition)
 {
-    
+    uint64 InFlags = (uint64)InHFlags << 32 | InLFlags;
     FEdGraphPinType PinType = ToFEdGraphPinType(InGraphPinType, InPinValueType);
 
     int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, NewVarName);
@@ -625,12 +652,33 @@ void UPEBlueprintAsset::AddMemberVariable(FName NewVarName, FPEGraphPinType InGr
     if (VarIndex != INDEX_NONE)
     {
         FBPVariableDescription& Variable = Blueprint->NewVariables[VarIndex];
-        int32 NetFlags = InFlags & CPF_Net;
-        
-        if ((Variable.PropertyFlags & CPF_Net) != NetFlags)
+        const uint64 NetMask = CPF_Net | CPF_RepNotify;
+        uint64 NetFlags = InFlags & NetMask;
+        if ((Variable.PropertyFlags & NetMask) != NetFlags)
         {
-            Variable.PropertyFlags &= ~CPF_Net;
+            Variable.PropertyFlags &= ~NetMask;
             Variable.PropertyFlags |= NetFlags;
+            if (Variable.PropertyFlags & CPF_RepNotify)
+            {
+                FString NewFuncNameStr = FString::Printf(TEXT("OnRep_%s"), *NewVarName.ToString());
+                FName NewFuncName = FName(*NewFuncNameStr);
+                UEdGraph* FuncGraph = FindObject<UEdGraph>(Blueprint, *NewFuncNameStr);
+                if (!FuncGraph)
+                {
+                    FuncGraph = FBlueprintEditorUtils::CreateNewGraph(Blueprint, NewFuncName, UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+                    FBlueprintEditorUtils::AddFunctionGraph<UClass>(Blueprint, FuncGraph, false, NULL);
+                }
+
+                FunctionAdded.Add(NewFuncName);
+
+                Blueprint->NewVariables[VarIndex].RepNotifyFunc = NewFuncName;
+            }
+            NeedSave = true;
+        }
+
+        if (InLifetimeCondition < COND_Max && Variable.ReplicationCondition != InLifetimeCondition)
+        {
+            Variable.ReplicationCondition = (ELifetimeCondition)InLifetimeCondition;
             NeedSave = true;
         }
     }
@@ -668,7 +716,7 @@ void UPEBlueprintAsset::RemoveNotExistedFunction()
         UEdGraph* EventGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint);
         if (EventGraph)
         {
-            auto RemovedCustomEvent = EventGraph->Nodes.RemoveAll([&](UEdGraphNode* GraphNode) { 
+            auto RemovedCustomEvent = EventGraph->Nodes.RemoveAll([&](UEdGraphNode* GraphNode) {
                 UK2Node_CustomEvent* CustomEvent = Cast<UK2Node_CustomEvent>(GraphNode);
                 return CustomEvent && !FunctionAdded.Contains(CustomEvent->CustomFunctionName);
                 });

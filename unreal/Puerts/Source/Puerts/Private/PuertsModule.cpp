@@ -31,7 +31,7 @@ public:
     virtual void NotifyUObjectCreated(const class UObjectBase *InObject, int32 Index) override;
     virtual void NotifyUObjectDeleted(const class UObjectBase *InObject, int32 Index) override;
 
-#if ENGINE_MINOR_VERSION > 22
+#if ENGINE_MINOR_VERSION > 22 || ENGINE_MAJOR_VERSION > 4
     virtual void OnUObjectArrayShutdown() override;
 #endif
 
@@ -48,7 +48,7 @@ public:
 
     void Disable();
 
-    virtual bool IsEnabled() override 
+    virtual bool IsEnabled() override
     {
         return Enabled;
     }
@@ -139,8 +139,8 @@ public:
             {
                 Result += 999;     // for server, we add 999, 8080 -> 9079
             }
-            else 
-            { 
+            else
+            {
                 Result += 10 * (Index + 1); //  for client, we add 10 for each new process, 8080 -> 8090, 8100, 8110
             }
         }
@@ -160,7 +160,7 @@ public:
     void MakeSharedJsEnv()
     {
         const UPuertsSetting& Settings = *GetDefault<UPuertsSetting>();
-        
+
         JsEnv.Reset();
         JsEnvGroup.Reset();
 
@@ -226,7 +226,7 @@ private:
 
 IMPLEMENT_MODULE( FPuertsModule, Puerts)
 
-void FPuertsModule::NotifyUObjectCreated(const class UObjectBase *InObject, int32 Index) 
+void FPuertsModule::NotifyUObjectCreated(const class UObjectBase *InObject, int32 Index)
 {
     if (Enabled)
     {
@@ -243,12 +243,12 @@ void FPuertsModule::NotifyUObjectCreated(const class UObjectBase *InObject, int3
     }
 }
 
-void FPuertsModule::NotifyUObjectDeleted(const class UObjectBase *InObject, int32 Index) 
+void FPuertsModule::NotifyUObjectDeleted(const class UObjectBase *InObject, int32 Index)
 {
     //UE_LOG(PuertsModule, Warning, TEXT("NotifyUObjectDeleted, %p"), InObject);
 }
 
-#if ENGINE_MINOR_VERSION > 22
+#if ENGINE_MINOR_VERSION > 22 || ENGINE_MAJOR_VERSION > 4
 void FPuertsModule::OnUObjectArrayShutdown()
 {
     if (Enabled)
@@ -288,7 +288,7 @@ void FPuertsModule::RegisterSettings()
     const FString PuertsConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultPuerts.ini"));
     if (GConfig->DoesSectionExist(SectionName, PuertsConfigIniPath))
     {
-        GConfig->GetBool(SectionName, TEXT("Enable"), Settings.Enable, PuertsConfigIniPath);
+        GConfig->GetBool(SectionName, TEXT("AutoModeEnable"), Settings.AutoModeEnable, PuertsConfigIniPath);
         GConfig->GetBool(SectionName, TEXT("DebugEnable"), Settings.DebugEnable, PuertsConfigIniPath);
         GConfig->GetBool(SectionName, TEXT("WaitDebugger"), Settings.WaitDebugger, PuertsConfigIniPath);
         if (!GConfig->GetInt(SectionName, TEXT("DebugPort"), Settings.DebugPort, PuertsConfigIniPath))
@@ -322,7 +322,7 @@ void FPuertsModule::StartupModule()
 #endif
     const UPuertsSetting& Settings = *GetDefault<UPuertsSetting>();
 
-    if (Settings.Enable)
+    if (Settings.AutoModeEnable)
     {
         Enable();
     }
@@ -354,9 +354,9 @@ bool FPuertsModule::HandleSettingsSaved()
 {
     const UPuertsSetting& Settings = *GetDefault<UPuertsSetting>();
 
-    if (Settings.Enable != Enabled)
+    if (Settings.AutoModeEnable != Enabled)
     {
-        if (Settings.Enable)
+        if (Settings.AutoModeEnable)
         {
             Enable();
         }

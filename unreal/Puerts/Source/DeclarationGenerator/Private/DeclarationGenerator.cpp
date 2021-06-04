@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Tencent is pleased to support the open source community by making Puerts available.
 * Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 * Puerts is licensed under the BSD 3-Clause License, except for the third-party components listed in the file 'LICENSE' which may be subject to their corresponding license terms.
@@ -25,6 +25,7 @@
 //#include "Misc/MessageDialog.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Engine/UserDefinedStruct.h"
+#include "Engine/UserDefinedEnum.h"
 #include "Engine/Blueprint.h"
 #include "TypeScriptObject.h"
 #include "CodeGenerator.h"
@@ -49,7 +50,7 @@ static FString SafeName(const FString &Name)
     return Ret;
 }
 
-static FString SafeFieldName(const FString &Name)
+static FString SafeFieldName(const FString &Name, bool WithBracket = true)
 {
     bool IsInvalid = false;
     FString Ret = TEXT("");
@@ -89,30 +90,8 @@ static FString SafeFieldName(const FString &Name)
             IsInvalid = true;
         }
     }
-    return IsInvalid  ? (TEXT("[\"") + Ret + TEXT("\"]")) : Ret;
+    return IsInvalid  ? (WithBracket ? ((TEXT("[\"") + Ret + TEXT("\"]"))) : ((TEXT("\"") + Ret + TEXT("\"")))) : Ret;
 }
-
-//在PropertyTranslator.cpp另有一份，因为属于两个不同的模块共享比较困难，改动需要同步改
-static FString DisplayNameOfUserDefinedStructField(const FString &Name)
-{
-    const int32 GuidStrLen = 32;
-    if (Name.Len() > GuidStrLen + 3)
-    {
-        const int32 UnderscoreIndex = Name.Len() - GuidStrLen - 1;
-        if (TCHAR('_') == Name[UnderscoreIndex])
-        {
-            for (int i = UnderscoreIndex - 1; i > 0; i--)
-            {
-                if (TCHAR('_') == Name[i])
-                {
-                    return Name.Mid(0, i);
-                }
-            }
-        }
-    }
-    return Name;
-}
-
 
 FStringBuffer& FStringBuffer::operator <<(const FString& InText)
 {
@@ -281,8 +260,7 @@ bool FTypeScriptDeclarationGenerator::GenTypeDecl(FStringBuffer& StringBuffer, P
     {
         StringBuffer << "boolean";
     }
-    else if (Property->IsA<BytePropertyMacro>()
-             || Property->IsA<DoublePropertyMacro>()
+    else if (Property->IsA<DoublePropertyMacro>()
              || Property->IsA<FloatPropertyMacro>()
              || Property->IsA<IntPropertyMacro>()
              || Property->IsA<UInt32PropertyMacro>()
@@ -308,6 +286,18 @@ bool FTypeScriptDeclarationGenerator::GenTypeDecl(FStringBuffer& StringBuffer, P
     {
         AddToGen.Add(EnumProperty->GetEnum());
         StringBuffer << SafeName(EnumProperty->GetEnum()->GetName());
+    }
+    else if (BytePropertyMacro* ByteProperty = CastFieldMacro<BytePropertyMacro>(Property))
+    {
+        if(ByteProperty->GetIntPropertyEnum())
+        {
+            AddToGen.Add(ByteProperty->GetIntPropertyEnum());
+            StringBuffer << SafeName(ByteProperty->GetIntPropertyEnum()->GetName());
+        }
+        else
+        {
+            StringBuffer << "number";
+        }
     }
     else if (auto StructProperty = CastFieldMacro<StructPropertyMacro>(Property))
     {
@@ -428,7 +418,20 @@ bool FTypeScriptDeclarationGenerator::GenFunction(FStringBuffer& OwnerBuffer,UFu
             else
             {
                 FStringBuffer TmpBuf;
-                TmpBuf << SafeName(Property->GetName()) << ": ";
+                TMap<FName, FString> *MetaMap = UMetaData::GetMapForObject(Function);
+                const FName MetadataCppDefaultValueKey(*(FString(TEXT("CPP_Default_")) + Property->GetName()));
+                FString *DefaultValuePtr = nullptr;
+                if (MetaMap)
+                {
+                    DefaultValuePtr = MetaMap->Find(MetadataCppDefaultValueKey);
+                }
+
+                TmpBuf << SafeName(Property->GetName());
+                if (DefaultValuePtr)
+                {
+                    TmpBuf << "?";
+                }
+                TmpBuf << ": ";
                 if (!IgnoreOut && Property->PropertyFlags & CPF_OutParm && (!(Property->PropertyFlags & CPF_ConstParm)))
                 {
                     if (ForceOneway) return false;
@@ -441,6 +444,20 @@ bool FTypeScriptDeclarationGenerator::GenFunction(FStringBuffer& OwnerBuffer,UFu
                 if (!IgnoreOut && Property->PropertyFlags & CPF_OutParm && (!(Property->PropertyFlags & CPF_ConstParm)))
                 {
                     TmpBuf << ">";
+                }
+                
+                if (DefaultValuePtr)
+                {
+                    if (Property->IsA<StrPropertyMacro>()
+                        || Property->IsA<NamePropertyMacro>()
+                        || Property->IsA<TextPropertyMacro>())
+                    {
+                        TmpBuf << " /* = \"" << *DefaultValuePtr << "\" */";
+                    }
+                    else
+                    {
+                        TmpBuf << " /* = " << *DefaultValuePtr << " */";
+                    }
                 }
                 ParamDecls.Add(TmpBuf.Buffer);
             }
@@ -540,9 +557,15 @@ void FTypeScriptDeclarationGenerator::GenEnum(UEnum *Enum)
     TArray<FString> EnumListerrals;
     for (int i = 0; i < Enum->NumEnums(); ++i)
     {
-        auto Name = Enum->GetNameStringByIndex(i);
+        auto Name = Enum->IsA<UUserDefinedEnum>() ? 
+#if ENGINE_MINOR_VERSION >= 23 || ENGINE_MAJOR_VERSION > 4
+            Enum->GetAuthoredNameStringByIndex(i)
+#else
+            Enum->GetDisplayNameTextByIndex(i).ToString()
+#endif
+            : Enum->GetNameStringByIndex(i);
        // auto Value = Enum->GetValueByIndex(i);
-        EnumListerrals.Add(Name);
+        EnumListerrals.Add(SafeFieldName(Name, false));
     }
     
     StringBuffer << "enum " << SafeName(Enum->GetName()) << " { " << FString::Join(EnumListerrals, TEXT(", ")) << "}\n";
@@ -582,7 +605,13 @@ void FTypeScriptDeclarationGenerator::GenStruct(UStruct *Struct)
             {
                 TmpBuff << ", ";
             }
-            TmpBuff << SafeName(Property->GetName()) << ": ";
+            TmpBuff << SafeName(Struct->IsA<UUserDefinedStruct>() ? 
+#if ENGINE_MINOR_VERSION >= 23 || ENGINE_MAJOR_VERSION > 4
+                Property->GetAuthoredName() 
+#else
+                Property->GetDisplayNameText().ToString()
+#endif
+                : Property->GetName()) << ": ";
             TArray<UObject *> RefTypesTmp;
             if (!GenTypeDecl(TmpBuff, Property, RefTypesTmp))
             {
@@ -598,8 +627,14 @@ void FTypeScriptDeclarationGenerator::GenStruct(UStruct *Struct)
     {
         auto Property = *PropertyIt;
         FStringBuffer TmpBuff;
-        FString SN = SafeName(Property->GetName());
-        TmpBuff << (Struct->IsA<UUserDefinedStruct>() ? DisplayNameOfUserDefinedStructField(SN) : SN) << ": ";
+        FString SN = SafeFieldName(Struct->IsA<UUserDefinedStruct>() ? 
+#if ENGINE_MINOR_VERSION >= 23 || ENGINE_MAJOR_VERSION > 4
+            Property->GetAuthoredName() 
+#else
+            Property->GetDisplayNameText().ToString()
+#endif
+            : Property->GetName());
+        TmpBuff << SN << ": ";
         TArray<UObject *> RefTypesTmp;
         if (!GenTypeDecl(TmpBuff, Property, RefTypesTmp))
         {

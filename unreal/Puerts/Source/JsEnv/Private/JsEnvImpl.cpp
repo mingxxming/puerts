@@ -27,6 +27,7 @@
 #include "TypeScriptObject.h"
 #include "TypeScriptGeneratedClass.h"
 #include "ContainerMeta.h"
+#include "Engine/UserDefinedEnum.h"
 
 #pragma warning(push, 0)  
 #include "libplatform/libplatform.h"
@@ -381,6 +382,10 @@ FJsEnvImpl::~FJsEnvImpl()
             {
                 (*ProxyIter)->JsFunction.Reset();
             }
+            if (!Iter->second.PassByPointer)
+            {
+                delete ((FScriptDelegate *)Iter->first);
+            }
         }
 
         for (auto Iter = TsFunctionMap.begin(); Iter != TsFunctionMap.end(); Iter++)
@@ -392,6 +397,7 @@ FJsEnvImpl::~FJsEnvImpl()
         for (auto Iter = BindInfoMap.begin(); Iter != BindInfoMap.end(); Iter++)
         {
             Iter->second.Constructor.Reset();
+            Iter->second.Prototype.Reset();
         }
         BindInfoMap.clear();
 
@@ -595,11 +601,11 @@ void FJsEnvImpl::LowMemoryNotification()
 }
 
 
-void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedClass, bool RebindObject)
+void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedClass, bool ForceReinject, bool RebindObject)
 {
-    //auto Iter = BindInfoMap.find(TypeScriptGeneratedClass);
+    auto Iter = BindInfoMap.find(TypeScriptGeneratedClass);
 
-    //if (Iter == BindInfoMap.end() || Iter->second.Rebind)//create and link
+    if (Iter == BindInfoMap.end() || ForceReinject)//create and link
     {
         auto Package = Cast<UPackage>(TypeScriptGeneratedClass->GetOuter());
         if (!Package)
@@ -613,9 +619,15 @@ void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedCl
 ;
         if (PackageName.StartsWith(PackageNamePrefix))
         {
-            if (auto SuperClass = Cast<UTypeScriptGeneratedClass>(TypeScriptGeneratedClass->GetSuperClass())) 
+            auto SuperClass = Cast<UTypeScriptGeneratedClass>(TypeScriptGeneratedClass->GetSuperClass());
+            if (SuperClass && SuperClass->GetName().StartsWith(TEXT("REINST_")))
             {
-                MakeSureInject(SuperClass, false);
+                //中间状态，父类修改，子类可能有个中间状态，其父类可能被修改为一个REINST_前缀的临时类
+                return;
+            }
+            if (SuperClass)
+            {
+                MakeSureInject(SuperClass, false, RebindObject);
             }
             FString ModuleName = PackageName.Mid(PackageNamePrefix.Len());
             Logger->Info(FString::Printf(TEXT("Bind module [%s] "), *ModuleName));
@@ -626,6 +638,14 @@ void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedCl
             auto Context = DefaultContext.Get(Isolate);
             v8::Context::Scope ContextScope(Context);
             auto LocalRequire = Require.Get(Isolate);
+
+            if (Iter == BindInfoMap.end())
+            {
+                FBindInfo BindInfo;
+                BindInfo.Name = *ModuleName;
+                BindInfo.Prototype.Reset(Isolate, v8::Object::New(Isolate));
+                BindInfoMap[TypeScriptGeneratedClass] = std::move(BindInfo);
+            }
 
             v8::TryCatch TryCatch(Isolate);
 
@@ -651,11 +671,9 @@ void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedCl
                     v8::Local<v8::Value> VProto;
                     //UE_LOG(LogTemp, Error, TEXT("found function for , %s"), *ModuleName);
 
-                    FBindInfo BindInfo;
-
                     if (Func->Get(Context, FV8Utils::ToV8String(Isolate, "prototype")).ToLocal(&VProto) && VProto->IsObject())
                     {
-                        BindInfo.Name = *ModuleName;
+                        
                         //UE_LOG(LogTemp, Error, TEXT("found proto for , %s"), *ModuleName);
                         v8::Local<v8::Object> Proto = VProto.As<v8::Object>();
 
@@ -668,9 +686,10 @@ void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedCl
                         if (Proto->Get(Context, FV8Utils::ToV8String(Isolate, "Constructor")).ToLocal(&VCtor) && VCtor->IsFunction())
                         {
                             //UE_LOG(LogTemp, Error, TEXT("found ctor for , %s"), *ModuleName);
-                            BindInfo.Constructor.Reset(Isolate, VCtor.As<v8::Function>());
+                            BindInfoMap[TypeScriptGeneratedClass].Constructor.Reset(Isolate, VCtor.As<v8::Function>());
+                            //BindInfo.Prototype.Reset(Isolate, Proto);
                         }
-                        BindInfoMap[TypeScriptGeneratedClass] = std::move(BindInfo);
+                        
                         //SysObjectRetainer.Retain(Class);
 
                         //implement by js
@@ -724,13 +743,26 @@ void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedCl
                         }
 
                         TryReleaseType(TypeScriptGeneratedClass);
-                        auto NativeCtor = GetTemplateOfClass(TypeScriptGeneratedClass)->GetFunction(Context).ToLocalChecked();
+                        auto NativeCtor = GetJsClass(TypeScriptGeneratedClass, Context);
                         v8::Local<v8::Value> VNativeProto;
                         if (NativeCtor->Get(Context, FV8Utils::ToV8String(Isolate, "prototype")).ToLocal(&VNativeProto) && VNativeProto->IsObject())
                         {
+                            //{} -> Native Prototype -> Js Prototype -> Super Prototype
                             v8::Local<v8::Object> NativeProto = VNativeProto.As<v8::Object>();
-                            __USE(Proto->SetPrototype(Context, NativeProto->GetPrototype()));
+                            __USE(BindInfoMap[TypeScriptGeneratedClass].Prototype.Get(Isolate)->SetPrototype(Context, NativeProto));
+                            if (SuperClass)
+                            {
+                                __USE(Proto->SetPrototype(Context, BindInfoMap[SuperClass].Prototype.Get(Isolate)));
+                            }
+                            else
+                            {
+                                __USE(Proto->SetPrototype(Context, NativeProto->GetPrototype()));
+                            }
                             __USE(NativeProto->SetPrototype(Context, Proto));
+                        }
+                        else
+                        {
+                            __USE(BindInfoMap[TypeScriptGeneratedClass].Prototype.Get(Isolate)->SetPrototype(Context, Proto));
                         }
 
                         if (RebindObject)
@@ -739,8 +771,12 @@ void FJsEnvImpl::MakeSureInject(UTypeScriptGeneratedClass* TypeScriptGeneratedCl
                             {
                                 auto Object = *It;
                                 if (Object->GetClass() != TypeScriptGeneratedClass) continue;
-                                auto JSObject = FindOrAdd(Isolate, Context, TypeScriptGeneratedClass, Object)->ToObject(Context).ToLocalChecked();
-                                auto ReturnVal1 = JSObject->SetPrototype(Context, Proto);
+                                //在编辑器下重启虚拟机，如果TS带构造函数，不重新执行的话，新虚拟机上逻辑上少执行了逻辑（比如对js对象一些字段的初始化）
+                                //执行的话，对CreateDefaultSubobject这类UE逻辑又不允许执行多次（会崩溃），两者相较取其轻
+                                //后面看是否能参照蓝图的组件初始化进行改造
+                                //TsConstruct(TypeScriptGeneratedClass, Object);
+                                auto JSObject = FindOrAdd(Isolate, Context, Object->GetClass(), Object)->ToObject(Context).ToLocalChecked();
+                                GeneratedObjectMap[Object] = v8::UniquePersistent<v8::Value>(MainIsolate, JSObject);
                                 UnBind(TypeScriptGeneratedClass, Object);
                             }
                         }
@@ -820,14 +856,10 @@ void FJsEnvImpl::TryBindJs(const class UObjectBase *InObject)
             {
                 if (IsCDO)
                 {
-                    if (BindInfoMap.find(TypeScriptGeneratedClass) == BindInfoMap.end() && !TypeScriptGeneratedClass->NotSupportInject())
-                    {
-                        //UE_LOG(LogTemp, Error, TEXT("CDO MakeSureInject %s %s %d %p %p %p"), *TypeScriptGeneratedClass->GetName(), *InObject->GetFName().ToString(),
-                        //    Object->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject), InObject, TypeScriptGeneratedClass, this);
-                        MakeSureInject(TypeScriptGeneratedClass, false);
-                    }
+                    //MakeSureInject(TypeScriptGeneratedClass, true, true);
+                    TypeScriptGeneratedClass->DynamicInvoker = TsDynamicInvoker;
                 }
-                else
+                else //InjectNotFinished状态下非CDO对象构建，把UFunction设置为Native
                 {
                     for (TFieldIterator<UFunction> FuncIt(TypeScriptGeneratedClass, EFieldIteratorFlags::ExcludeSuper); FuncIt; ++FuncIt)
                     {
@@ -838,10 +870,29 @@ void FJsEnvImpl::TryBindJs(const class UObjectBase *InObject)
                 }
             }
         }
+        else if (UNLIKELY(IsCDO && !Class->IsNative()))
+        {
+            auto Super = Class->GetSuperClass();
+            while (Super && !Super->IsNative())
+            {
+                auto TempTypeScriptGeneratedClass = Cast<UTypeScriptGeneratedClass>(Super);
+                if (TempTypeScriptGeneratedClass && TempTypeScriptGeneratedClass->InjectNotFinished) //InjectNotFinished状态下，其子类的CDO对象构建，把UFunction设置为Native
+                {
+                    for (TFieldIterator<UFunction> FuncIt(TempTypeScriptGeneratedClass, EFieldIteratorFlags::ExcludeSuper); FuncIt; ++FuncIt)
+                    {
+                        auto Function = *FuncIt;
+                        Function->FunctionFlags |= FUNC_BlueprintCallable | FUNC_BlueprintEvent | FUNC_Public | FUNC_Native;
+                    }
+                    TempTypeScriptGeneratedClass->InjectNotFinished = false;
+                }
+                Super = Super->GetSuperClass();
+            }
+        }
         //else if (UNLIKELY(Class == UTypeScriptGeneratedClass::StaticClass()))
         //{
         //    ((UTypeScriptGeneratedClass *)InObject)->DynamicInvoker = TsDynamicInvoker;
         //}
+        
     }
 }
 
@@ -853,7 +904,7 @@ void FJsEnvImpl::RebindJs()
         
         if (!Class->NotSupportInject())
         {
-            MakeSureInject(Class, true);
+            MakeSureInject(Class, false, true);
         }
     }
 }
@@ -924,7 +975,7 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAdd(v8::Isolate* Isolate, v8::Local<v8::C
         }
         auto BindTo = v8::External::New(Context->GetIsolate(), UEObject);
         v8::Handle<v8::Value> Args[] = { BindTo };
-        return GetTemplateOfClass(Class)->GetFunction(Context).ToLocalChecked()->NewInstance(Context, 1, Args).ToLocalChecked();
+        return GetJsClass(Class, Context)->NewInstance(Context, 1, Args).ToLocalChecked();
     }
     else
     {
@@ -936,6 +987,9 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAddStruct(v8::Isolate* Isolate, v8::Local
 {
     check(Ptr);//must not null
 
+    //查询历史记录，当初这么改是因为一个结构体如果其第一个成员也是结构体，这个结构体的指针将和这个第一个成员的指针值一样，导致访问该成员也会返回外层结构体
+    //但问题是目前看，这部分是多余代码了，如果不是传指针才查，但不是传指针每次都是new堆内存，实际上是不可能查找到的，还是走到后面的逻辑
+    //另外，这有没更好的解决办法呢？记录下ScriptStruct，如果类型不一致才new？
     if (!PassByPointer)
     {
         auto Iter = StructMap.find(Ptr);
@@ -948,7 +1002,7 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAddStruct(v8::Isolate* Isolate, v8::Local
     //create and link
     auto BindTo = v8::External::New(Context->GetIsolate(), Ptr);
     v8::Handle<v8::Value> Args[] = { BindTo, v8::Boolean::New(Isolate, PassByPointer) };
-    return GetTemplateOfClass(ScriptStruct)->GetFunction(Context).ToLocalChecked()->NewInstance(Context, 2, Args).ToLocalChecked();
+    return GetJsClass(ScriptStruct, Context)->NewInstance(Context, 2, Args).ToLocalChecked();
 }
 
 v8::Local<v8::Value> FJsEnvImpl::FindOrAddCData(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, const char* CDataName, void *Ptr, bool PassByPointer)
@@ -984,12 +1038,32 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAddCData(v8::Isolate* Isolate, v8::Local<
     }
 }
 
-v8::Local<v8::Value> FJsEnvImpl::FindOrAddDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner, PropertyMacro* Property, void *DelegatePtr)
+v8::Local<v8::Value> FJsEnvImpl::FindOrAddDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner, PropertyMacro* Property, void *DelegatePtr, bool PassByPointer)
 {
     check(DelegatePtr);//must not null
 
-    auto Iter = DelegateMap.find(DelegatePtr);
-    if (Iter == DelegateMap.end())//create and link
+    if (PassByPointer)
+    {
+        auto Iter = DelegateMap.find(DelegatePtr);
+        if (Iter != DelegateMap.end())
+        {
+            return Iter->second.JSObject.Get(Isolate);
+        }
+    }
+    else
+    {
+        if (CastFieldMacro<DelegatePropertyMacro>(Property))
+        {
+            auto NewDelegatePtr = new FScriptDelegate;
+            *NewDelegatePtr = *static_cast<FScriptDelegate *>(DelegatePtr);
+            DelegatePtr = NewDelegatePtr;
+        }
+        else // do not support MulticastDelegate
+        {
+            return v8::Undefined(Isolate);
+        }
+    }
+
     {
         //UE_LOG(LogTemp, Warning, TEXT("FindOrAddDelegate -- new %s"), *Property->GetName());
         auto Constructor = (Property->IsA<DelegatePropertyMacro>() ? DelegateTemplate : MulticastDelegateTemplate).Get(Isolate)->GetFunction(Context).ToLocalChecked();
@@ -1013,14 +1087,10 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAddDelegate(v8::Isolate* Isolate, v8::Loc
             DelegateProperty,
             MulticastDelegateProperty,
             Function,
+            PassByPointer,
             nullptr
         };
         return JSObject;
-    }
-    else
-    {
-        //UE_LOG(LogTemp, Warning, TEXT("FindOrAddDelegate -- old %s"), *Property->GetName());
-        return Iter->second.JSObject.Get(Isolate);
     }
 }
 
@@ -1099,20 +1169,35 @@ void FJsEnvImpl::TsConstruct(UTypeScriptGeneratedClass* Class, UObject* Object)
 
         v8::TryCatch TryCatch(Isolate);
 
-        auto JSObject = FindOrAdd(Isolate, Context, Class, Object)->ToObject(Context).ToLocalChecked();
-        GeneratedObjectMap[Object] = v8::UniquePersistent<v8::Value>(MainIsolate, JSObject);
-        UnBind(Class, Object);
+        v8::Local<v8::Object> JSObject;
+        auto Iter2 = GeneratedObjectMap.find(Object);
+        if (Iter2 == GeneratedObjectMap.end())
+        {
+            JSObject = FindOrAdd(Isolate, Context, Object->GetClass(), Object)->ToObject(Context).ToLocalChecked();
+            GeneratedObjectMap[Object] = v8::UniquePersistent<v8::Value>(MainIsolate, JSObject);
+            UnBind(Class, Object);
+        }
+        else
+        {
+            JSObject = Iter2->second.Get(Isolate).As<v8::Object>();
+        }
+
+        //假如是UTypeScriptGeneratedClass的对象，设置成间接Prototype，后续刷新代码对象会自动更新
+        if (Object->GetClass() == Class && !Iter->second.Prototype.IsEmpty())
+        {
+            __USE(JSObject->SetPrototype(Context, Iter->second.Prototype.Get(Isolate)));
+        }
 
         if (!Iter->second.Constructor.IsEmpty())
         {
-            auto ReturnVal2 = Iter->second.Constructor.Get(Isolate)->Call(Context, JSObject, 0, nullptr);
+            __USE(Iter->second.Constructor.Get(Isolate)->Call(Context, JSObject, 0, nullptr));
         }
         if (TryCatch.HasCaught())
         {
             Logger->Error(FString::Printf(TEXT("js callback exception %s"), *GetExecutionException(Isolate, &TryCatch)));
         }
     }
-    else
+    else if (!Object->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
     {
         Logger->Error(FString::Printf(TEXT("Construct TypeScript Object fail for %s"), *Class->GetName()));
     }
@@ -1232,7 +1317,7 @@ void FJsEnvImpl::InvokeTsMethod(UObject *ContextObject, UFunction *Function, FFr
 
 void FJsEnvImpl::NotifyReBind(UTypeScriptGeneratedClass* Class)
 {
-    MakeSureInject(Class, false);
+    MakeSureInject(Class, true, false);
 }
 
 void FJsEnvImpl::ExecuteDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, const v8::FunctionCallbackInfo<v8::Value>& Info, void *DelegatePtr)
@@ -1276,6 +1361,10 @@ bool FJsEnvImpl::AddToDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Con
     {
         Logger->Warn("try to bind a delegate with invalid owner!");
         ClearDelegate(Isolate, Context, DelegatePtr);
+        if (!Iter->second.PassByPointer)
+        {
+            delete ((FScriptDelegate *)Iter->first);
+        }
         DelegateMap.erase(Iter);
         return false;
     }
@@ -1318,7 +1407,7 @@ bool FJsEnvImpl::AddToDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Con
     {
         //UE_LOG(LogTemp, Warning, TEXT("add to multicast delegate, proxy: %p to:%p"), DelegateProxy, DelegatePtr);
         Iter->second.Proxys.Add(DelegateProxy);
-#if ENGINE_MINOR_VERSION >= 23
+#if ENGINE_MINOR_VERSION >= 23 || ENGINE_MAJOR_VERSION > 4
         if (Iter->second.MulticastDelegateProperty->IsA<MulticastSparseDelegatePropertyMacro>())
         {
             Iter->second.MulticastDelegateProperty->AddDelegate(MoveTemp(Delegate), Iter->second.Owner.Get(), DelegatePtr);
@@ -1367,7 +1456,7 @@ bool FJsEnvImpl::RemoveFromDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>
 
         Delegate.BindUFunction(DelegateProxy, NAME_Fire);
 
-#if ENGINE_MINOR_VERSION >= 23
+#if ENGINE_MINOR_VERSION >= 23 || ENGINE_MAJOR_VERSION > 4
         if (Iter->second.MulticastDelegateProperty->IsA<MulticastSparseDelegatePropertyMacro>())
         {
             Iter->second.MulticastDelegateProperty->RemoveDelegate(Delegate, Iter->second.Owner.Get(), DelegatePtr);
@@ -1419,7 +1508,7 @@ bool FJsEnvImpl::ClearDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Con
     {
         if (Iter->second.Owner.IsValid())
         {
-#if ENGINE_MINOR_VERSION >= 23
+#if ENGINE_MINOR_VERSION >= 23 || ENGINE_MAJOR_VERSION > 4
             if (Iter->second.MulticastDelegateProperty->IsA<MulticastSparseDelegatePropertyMacro>())
             {
                 Iter->second.MulticastDelegateProperty->ClearDelegate(Iter->second.Owner.Get(), DelegatePtr);
@@ -1460,6 +1549,10 @@ bool FJsEnvImpl::CheckDelegateProxys(float tick)
     for (int i = 0; i < PendingToRemove.size(); ++i)
     {
         ClearDelegate(Isolate, Context, PendingToRemove[i]);
+        if (!DelegateMap[PendingToRemove[i]].PassByPointer)
+        {
+            delete ((FScriptDelegate *)PendingToRemove[i]);
+        }
         DelegateMap.erase(PendingToRemove[i]);
     }
     return true;
@@ -1471,7 +1564,7 @@ FPropertyTranslator* FJsEnvImpl::GetContainerPropertyTranslator(PropertyMacro* P
     if (Iter == ContainerPropertyMap.end())
     {
         ContainerPropertyMap[Property] = FPropertyTranslator::Create(Property);
-#if ENGINE_MINOR_VERSION < 25
+#if ENGINE_MINOR_VERSION < 25 && ENGINE_MAJOR_VERSION < 5
         if (!Property->IsNative())
         {
             SysObjectRetainer.Retain(Property);
@@ -1579,7 +1672,7 @@ void FJsEnvImpl::UnBindContainer(void* Ptr)
     StructMap.erase(Ptr);
 }
 
-v8::Local<v8::FunctionTemplate> FJsEnvImpl::GetTemplateOfClass(UStruct *InStruct)
+v8::Local<v8::FunctionTemplate> FJsEnvImpl::GetTemplateOfClass(UStruct *InStruct, bool &Existed)
 {
     auto Isolate = MainIsolate;
     auto Iter = ClassToTemplateMap.find(InStruct);
@@ -1609,7 +1702,8 @@ v8::Local<v8::FunctionTemplate> FJsEnvImpl::GetTemplateOfClass(UStruct *InStruct
             auto SuperStruct = ScriptStruct->GetSuperStruct();
             if (SuperStruct)
             {
-                Template->Inherit(GetTemplateOfClass(SuperStruct));
+                bool Dummy;
+                Template->Inherit(GetTemplateOfClass(SuperStruct, Dummy));
             }
         }
         else
@@ -1628,23 +1722,55 @@ v8::Local<v8::FunctionTemplate> FJsEnvImpl::GetTemplateOfClass(UStruct *InStruct
             auto SuperClass = Class->GetSuperClass();
             if (SuperClass)
             {
-                Template->Inherit(GetTemplateOfClass(SuperClass));
+                bool Dummy;
+                Template->Inherit(GetTemplateOfClass(SuperClass, Dummy));
             }
         }
             
         ClassToTemplateMap[InStruct] = v8::UniquePersistent<v8::FunctionTemplate>(Isolate, Template);
 
+        Existed = false;
         return HandleScope.Escape(Template);
     }
     else
     {
+        Existed = true;
         return v8::Local<v8::FunctionTemplate>::New(Isolate, Iter->second);
     }
 }
 
+
+v8::Local<v8::Function> FJsEnvImpl::GetJsClass(UStruct *InStruct, v8::Local<v8::Context> Context)
+{
+    bool Existed;
+    auto Ret = GetTemplateOfClass(InStruct, Existed)->GetFunction(Context).ToLocalChecked();
+
+    if (UNLIKELY(!Existed)) //first create
+    {
+        auto Class = Cast<UClass>(InStruct);
+        if (Class && !Class->IsNative() && !InStruct->IsA<UTypeScriptGeneratedClass>())
+        {
+            auto SuperClass = Cast<UTypeScriptGeneratedClass>(Class->GetSuperClass());
+            if (SuperClass)
+            {
+                MakeSureInject(SuperClass, false, false);
+                v8::Local<v8::Value> VProto;
+                if (Ret->Get(Context, FV8Utils::ToV8String(MainIsolate, "prototype")).ToLocal(&VProto) && VProto->IsObject())
+                {
+                    v8::Local<v8::Object> Proto = VProto.As<v8::Object>();
+                    __USE(Proto->SetPrototype(Context, BindInfoMap[SuperClass].Prototype.Get(MainIsolate)));
+                }
+            }
+        }
+    }
+
+    return Ret;
+}
+
 bool FJsEnvImpl::IsInstanceOf(UStruct *Struct, v8::Local<v8::Object> JsObject)
 {
-    return GetTemplateOfClass(Struct)->HasInstance(JsObject);
+    bool Dummy;
+    return GetTemplateOfClass(Struct, Dummy)->HasInstance(JsObject);
 }
 
 bool FJsEnvImpl::IsInstanceOf(const char* CDataName, v8::Local<v8::Object> JsObject)
@@ -1784,14 +1910,20 @@ void FJsEnvImpl::LoadUEType(const v8::FunctionCallbackInfo<v8::Value>& Info)
             FV8Utils::ThrowException(Isolate, FString::Printf(TEXT("%s is blueprint type, load it using puerts.blueprint."), *TypeName));
             return;
         }
-        Info.GetReturnValue().Set(GetTemplateOfClass(Struct)->GetFunction(Context).ToLocalChecked());
+        Info.GetReturnValue().Set(GetJsClass(Struct, Context));
     }
     else if (auto Enum = Cast<UEnum>(Type))
     {
         auto Result = v8::Object::New(Isolate);
         for (int i = 0; i < Enum->NumEnums(); ++i)
         {
-            auto Name = Enum->GetNameStringByIndex(i);
+            auto Name = Enum->IsA<UUserDefinedEnum>() ? 
+#if ENGINE_MINOR_VERSION >= 23 || ENGINE_MAJOR_VERSION > 4
+                Enum->GetAuthoredNameStringByIndex(i)
+#else
+                Enum->GetDisplayNameTextByIndex(i).ToString()
+#endif
+                : Enum->GetNameStringByIndex(i);
             auto Value = Enum->GetValueByIndex(i);
             auto ReturnVal = Result->Set(Context, FV8Utils::ToV8String(Isolate, Name), v8::Number::New(Isolate, Value));
         }
@@ -1840,7 +1972,7 @@ void FJsEnvImpl::UEClassToJSClass(const v8::FunctionCallbackInfo<v8::Value>& Inf
 
     if (Struct)
     {
-        Info.GetReturnValue().Set(GetTemplateOfClass(Struct)->GetFunction(Context).ToLocalChecked());
+        Info.GetReturnValue().Set(GetJsClass(Struct, Context));
     }
     else
     {
