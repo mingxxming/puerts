@@ -432,7 +432,15 @@ bool FTypeScriptDeclarationGenerator::GenFunction(FStringBuffer& OwnerBuffer,UFu
                     TmpBuf << "?";
                 }
                 TmpBuf << ": ";
-                if (!IgnoreOut && Property->PropertyFlags & CPF_OutParm && (!(Property->PropertyFlags & CPF_ConstParm)))
+
+                const bool IsReference = !IgnoreOut && Property->PropertyFlags & CPF_OutParm && (!(Property->PropertyFlags & CPF_ConstParm));
+                const bool IsNullable = !(DefaultValuePtr != nullptr || IsReference) && (CastFieldMacro<ObjectPropertyMacro>(Property) != nullptr) && !(Property->PropertyFlags & CPF_ReferenceParm);
+                
+                if (IsNullable)
+                {
+                    TmpBuf << "$Nullable<";
+                }
+                if (IsReference)
                 {
                     if (ForceOneway) return false;
                     TmpBuf << "$Ref<";
@@ -441,7 +449,11 @@ bool FTypeScriptDeclarationGenerator::GenFunction(FStringBuffer& OwnerBuffer,UFu
                 {
                     return false;
                 }
-                if (!IgnoreOut && Property->PropertyFlags & CPF_OutParm && (!(Property->PropertyFlags & CPF_ConstParm)))
+                if (IsReference)
+                {
+                    TmpBuf << ">";
+                }
+                if (IsNullable)
                 {
                     TmpBuf << ">";
                 }
@@ -594,6 +606,7 @@ void FTypeScriptDeclarationGenerator::GenStruct(UStruct *Struct)
         FStringBuffer TmpBuff;
         TmpBuff << "constructor(";
         bool First = true;
+        bool HasProperty = false;
         for (TFieldIterator<PropertyMacro> PropertyIt(Struct, EFieldIteratorFlags::ExcludeSuper); PropertyIt; ++PropertyIt)
         {
             auto Property = *PropertyIt;
@@ -617,8 +630,10 @@ void FTypeScriptDeclarationGenerator::GenStruct(UStruct *Struct)
             {
                 return;
             }
+            HasProperty = true;
         }
         TmpBuff << ")";
+        if (HasProperty) StringBuffer << "    constructor();\n";
         StringBuffer << "    " << TmpBuff.Buffer << ";\n";
     };
     GenConstrutor();
@@ -689,6 +704,7 @@ class FDeclarationGenerator : public IDeclarationGenerator
 {
 private:
     TSharedPtr<class FUICommandList> PluginCommands;
+	TUniquePtr<FAutoConsoleCommand> ConsoleCommand;
 
     void AddToolbarExtension(FToolBarBuilder& Builder)
     {
@@ -746,6 +762,10 @@ public:
 
             LevelEditorModule.GetToolBarExtensibilityManager()->AddExtender(ToolbarExtender);
         }
+
+		ConsoleCommand = MakeUnique<FAutoConsoleCommand>(TEXT("Puerts.Gen")
+			, TEXT("Execute GenDTS action")
+			, FConsoleCommandDelegate::CreateRaw(this, &FDeclarationGenerator::GenUeDts));
     }
 
     void ShutdownModule() override 

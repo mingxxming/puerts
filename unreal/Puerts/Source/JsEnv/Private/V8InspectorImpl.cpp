@@ -202,7 +202,7 @@ private:
 };
 
 #if USING_UE
-void ReportException(const websocketpp::exception& Exception, TCHAR *JobInfo)  
+void ReportException(const websocketpp::exception& Exception, const TCHAR *JobInfo)  
 {
 #if PLATFORM_WINDOWS
     int len = MultiByteToWideChar(CP_ACP, 0, Exception.what(), -1, NULL, 0);  
@@ -243,6 +243,7 @@ V8InspectorClientImpl::V8InspectorClientImpl(int32_t InPort, v8::Local<v8::Conte
 
     try
     {
+        Server.set_reuse_addr(true);
         Server.set_access_channels(websocketpp::log::alevel::none);
         Server.set_error_channels(websocketpp::log::elevel::none);
 

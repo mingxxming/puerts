@@ -6,6 +6,8 @@
 */
 
 declare module "ue" {
+    type $Nullable<T> = T | null;
+    
     type ArgumentTypes<T> = T extends (... args: infer U ) => infer R ? U: never;
 
     interface $Ref<T> {
@@ -114,6 +116,8 @@ declare module "ue" {
 
     function NewObject(Cls: Class, Outer?: Object, Name?:string, ObjectFlags?: number): Object;
     
+    function NewStruct(St: ScriptStruct): object;
+    
     type TWeakObjectPtr<T> = {
         [K in keyof T]: T[K];
     }
@@ -188,5 +192,9 @@ declare module "ue" {
     
         export function condition(f: ELifetimeCondition) : (target: Object, propertyKey: string) => void;
     }
+    
+    function edit_on_instance(): any;
+    
+    function no_blueprint(): any;
 
 }

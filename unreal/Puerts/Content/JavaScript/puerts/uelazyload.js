@@ -54,6 +54,9 @@ var global = global || (function () { return this; }());
     cache.NewObject = global.__tgjsNewObject;
     global.__tgjsNewObject = undefined;
     
+    cache.NewStruct = global.__tgjsNewStruct;
+    global.__tgjsNewStruct = undefined;
+    
     puerts.$ref = ref;
     puerts.$unref = unref;
     puerts.$set = setref;
@@ -194,5 +197,11 @@ var global = global || (function () { return this; }());
         "flags" : dummyDecorator,
         "condition" : dummyDecorator
     }
+    
+    cache.edit_on_instance = dummyDecorator;
+    
+    cache.no_blueprint = dummyDecorator;
+    
+    puerts.toManualReleaseDelegate = (x) => x;
     
 }(global));

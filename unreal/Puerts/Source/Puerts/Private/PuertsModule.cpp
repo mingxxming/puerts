@@ -14,6 +14,8 @@
 #include "ISettingsModule.h"
 #include "ISettingsSection.h"
 #include "Internationalization/Regex.h"
+#include "LevelEditor.h"
+#include "Misc/HotReloadInterface.h"
 #endif
 #include "Commandlets/Commandlet.h"
 
@@ -38,6 +40,13 @@ public:
 #if WITH_EDITOR
     void EndPIE(bool bIsSimulating);
     bool HandleSettingsSaved();
+    void HandleMapChanged(UWorld* InWorld, EMapChangeType InMapChangeType)
+    {
+        if (Enabled && EMapChangeType::TearDownWorld == InMapChangeType)
+        {
+            MakeSharedJsEnv();
+        }
+    }
 #endif
 
     void RegisterSettings();
@@ -204,7 +213,7 @@ public:
 
             if (Settings.WaitDebugger)
             {
-                JsEnv->WaitDebugger();
+                JsEnv->WaitDebugger(Settings.WaitDebuggerTimeout);
             }
 
             JsEnv->RebindJs();
@@ -291,6 +300,7 @@ void FPuertsModule::RegisterSettings()
         GConfig->GetBool(SectionName, TEXT("AutoModeEnable"), Settings.AutoModeEnable, PuertsConfigIniPath);
         GConfig->GetBool(SectionName, TEXT("DebugEnable"), Settings.DebugEnable, PuertsConfigIniPath);
         GConfig->GetBool(SectionName, TEXT("WaitDebugger"), Settings.WaitDebugger, PuertsConfigIniPath);
+        GConfig->GetDouble(SectionName, TEXT("WaitDebuggerTimeout"), Settings.WaitDebuggerTimeout, PuertsConfigIniPath);
         if (!GConfig->GetInt(SectionName, TEXT("DebugPort"), Settings.DebugPort, PuertsConfigIniPath))
         {
             Settings.DebugPort = 8080;
@@ -318,7 +328,19 @@ void FPuertsModule::StartupModule()
 {
 #if WITH_EDITOR
     FEditorDelegates::EndPIE.AddRaw(this, &FPuertsModule::EndPIE);
+    //FEditorSupportDelegates::CleanseEditor.AddRaw(this, &FPuertsModule::CleanseEditor);
+    FLevelEditorModule& LevelEditor = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
+    LevelEditor.OnMapChanged().AddRaw(this, &FPuertsModule::HandleMapChanged);
     RegisterSettings();
+
+    IHotReloadInterface& HotReloadSupport = FModuleManager::LoadModuleChecked<IHotReloadInterface>("HotReload");
+    HotReloadSupport.OnHotReload().AddLambda([&](bool )
+    {
+        if (Enabled)
+        {
+            MakeSharedJsEnv();
+        }
+    });
 #endif
     const UPuertsSetting& Settings = *GetDefault<UPuertsSetting>();
 
@@ -373,6 +395,10 @@ void FPuertsModule::ShutdownModule()
 {
 #if WITH_EDITOR
     UnregisterSettings();
+    if (FLevelEditorModule* LevelEditor = FModuleManager::GetModulePtr<FLevelEditorModule>("LevelEditor"))
+    {
+        LevelEditor->OnMapChanged().RemoveAll(this);
+    }
 #endif
     if (Enabled)
     {

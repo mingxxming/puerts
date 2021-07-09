@@ -51,9 +51,20 @@ public:
 
     void LowMemoryNotification() override;
 
-    void WaitDebugger() override
+    void WaitDebugger(double timeout) override
     {
-        while (Inspector && !Inspector->Tick()) {}
+        const auto startTime = FDateTime::Now();
+        while (Inspector && !Inspector->Tick())
+        {
+            if (timeout > 0)
+            {
+                auto now = FDateTime::Now();
+                if ((now - startTime).GetTotalSeconds() >= timeout)
+                {
+                    break;
+                }
+            }
+        }
     }
 
     virtual void TryBindJs(const class UObjectBase *InObject) override;
@@ -106,6 +117,10 @@ public:
     v8::Local<v8::Value> FindOrAddDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner, PropertyMacro* Property, void *DelegatePtr, bool PassByPointer) override;
 
     bool AddToDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void *DelegatePtr, v8::Local<v8::Function> JsFunction) override;
+
+    FScriptDelegate NewManualReleaseDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, v8::Local<v8::Function> JsFunction, UFunction* SignatureFunction) override;
+
+    void ReleaseManualReleaseDelegate(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
     bool RemoveFromDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void *DelegatePtr, v8::Local<v8::Function> JsFunction) override;
 
@@ -197,6 +212,8 @@ private:
     void MergeObject(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
     void NewObjectByClass(const v8::FunctionCallbackInfo<v8::Value>& Info);
+
+    void NewStructByScriptStruct(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
     void MakeUClass(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
@@ -369,8 +386,8 @@ private:
         MulticastDelegatePropertyMacro *MulticastDelegateProperty;
         UFunction *SignatureFunction;
         bool PassByPointer;
-        UDynamicDelegateProxy *Proxy;//for delegate
-        TSet<UDynamicDelegateProxy*> Proxys; // for MulticastDelegate
+        TWeakObjectPtr<UDynamicDelegateProxy> Proxy;//for delegate
+        TSet<TWeakObjectPtr<UDynamicDelegateProxy>> Proxys; // for MulticastDelegate
     };
 
     struct TsFunctionInfo
@@ -428,6 +445,8 @@ private:
 
     std::map<UStruct*, std::vector<UFunction*>> ExtensionMethodsMap;
 
+    bool ExtensionMethodsMapInited = false;
+
     std::map<FDelegateHandle*, FTickerDelegateWrapper*> TickerDelegateHandleMap;
 
     FDelegateHandle DelegateProxysCheckerHandler;
@@ -439,6 +458,10 @@ private:
     v8::Global<v8::Function> InspectorMessageHandler;
 
     FContainerMeta ContainerMeta;
+
+    v8::Global<v8::Map> ManualReleaseCallbackMap;
+
+    std::vector<TWeakObjectPtr<UDynamicDelegateProxy>> ManualReleaseCallbackList;
 };
 
 }

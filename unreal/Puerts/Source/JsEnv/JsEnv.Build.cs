@@ -9,6 +9,7 @@ using UnrealBuildTool;
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Reflection;
 
 public class JsEnv : ModuleRules
 {
@@ -17,6 +18,8 @@ public class JsEnv : ModuleRules
     private bool UseQuickjs = false;
 
     private bool WinDll = false;
+
+    private bool WithFFI = false;
 
     public JsEnv(ReadOnlyTargetRules Target) : base(Target)
     {
@@ -31,6 +34,15 @@ public class JsEnv : ModuleRules
 
         bEnableExceptions = true;
         bEnableUndefinedIdentifierWarnings = false; // 避免在VS 2017编译时出现C4668错误
+        var ContextField = GetType().GetField("Context", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (ContextField != null)
+        {
+            var bCanHotReloadField = ContextField.FieldType.GetField("bCanHotReload", BindingFlags.Instance | BindingFlags.Public);
+            if (bCanHotReloadField != null)
+            {
+                bCanHotReloadField.SetValue(ContextField.GetValue(this), false);
+            }
+        }
 
         if (UseNewV8)
         {
@@ -44,6 +56,8 @@ public class JsEnv : ModuleRules
         {
             OldThirdParty(Target);
         }
+        
+        if (WithFFI) AddFFI(Target);
 
         string coreJSPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "Content"));
         string destDirName = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "..", "..", "Content"));
@@ -196,15 +210,35 @@ public class JsEnv : ModuleRules
             PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "websocketpp") });
             PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "asio") });
         }
+    }
 
-        //if (Target.Platform == UnrealTargetPlatform.Mac)
-        //{
-        //    PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "ffi", "macOS") });
-        //}
-        //else if (Target.Platform == UnrealTargetPlatform.IOS)
-        //{
-        //    PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "ffi", "iOS") });
-        //}
+    void AddFFI(ReadOnlyTargetRules Target)
+    {
+        string HeaderPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "Include"));
+        string LibraryPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "Library"));
+        if (Target.Platform == UnrealTargetPlatform.Win64)
+        {
+            PublicIncludePaths.AddRange(new string[] {Path.Combine(HeaderPath, "ffi", "Win64")});
+            PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "ffi", "Win64", "ffi.lib"));
+        }
+        else if (Target.Platform == UnrealTargetPlatform.Mac)
+        {
+            PublicIncludePaths.AddRange(new string[] {Path.Combine(HeaderPath, "ffi", "macOS")});
+            PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "ffi", "macOS", "libffi.a"));
+        }
+        else if (Target.Platform == UnrealTargetPlatform.IOS)
+        {
+            PublicIncludePaths.AddRange(new string[] {Path.Combine(HeaderPath, "ffi", "iOS")});
+            PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "ffi", "iOS", "libffi.a"));
+        }
+        else if (Target.Platform == UnrealTargetPlatform.Android)
+        {
+            PublicIncludePaths.AddRange(new string[] {Path.Combine(HeaderPath, "ffi", "Android")});
+            PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "ffi", "Android", "armeabi-v7a", "libffi.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "ffi", "Android", "arm64-v8a", "libffi.a"));
+        }
+
+        Definitions.Add("WITH_FFI");
     }
 
     void AddRuntimeDependencies(string[] DllNames, string LibraryPath, bool Delay)
