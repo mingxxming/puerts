@@ -48,7 +48,7 @@ v8_use_external_startup_data = true
 v8_static_library = true
 strip_absolute_paths_from_debug_symbols = false
 strip_debug_info = false
-symbol_level=1
+symbol_level=0
 use_custom_libcxx=false
 use_custom_libcxx_for_host=true
 '
