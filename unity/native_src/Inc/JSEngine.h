@@ -159,7 +159,6 @@ public:
     v8::Isolate* MainIsolate;
 
     std::vector<char> StrBuffer;
-    v8::Global<v8::Context> DefaultContext;
 
     FResultInfo ResultInfo;
 
@@ -198,6 +197,8 @@ private:
     std::map<void*, v8::UniquePersistent<v8::Value>> ObjectMap;
 
     std::vector<JSFunction*> JSFunctions;
+    v8::Global<v8::Context> DefaultContext;
+
 
     v8::UniquePersistent<v8::Map> JSObjectIdMap;
 
