@@ -159,6 +159,7 @@ public:
     v8::Isolate* MainIsolate;
 
     std::vector<char> StrBuffer;
+    v8::Global<v8::Context> DefaultContext;
 
     FResultInfo ResultInfo;
 
@@ -205,7 +206,6 @@ private:
     std::vector<int32_t> ObjectMapFreeIndex;
 
     std::mutex JSFunctionsMutex;
-    v8::Global<v8::Context> DefaultContext;
 
     std::mutex JSObjectsMutex;
 
