@@ -660,7 +660,9 @@ V8_EXPORT JsValueType GetResultType(FResultInfo *ResultInfo)
     v8::Context::Scope ContextScope(Context);
     auto Result = ResultInfo->Result.Get(Isolate);
     return FV8Utils::GetType(Context, *Result);
+
 }
+
 
 V8_EXPORT double GetNumberFromResult(FResultInfo *ResultInfo)
 {
@@ -864,6 +866,17 @@ V8_EXPORT void LogicTick(v8::Isolate *Isolate)
 {
     auto JsEngine = FV8Utils::IsolateData<JSEngine>(Isolate);
     return JsEngine->LogicTick();
+}
+
+V8_EXPORT void Lock(v8::Isolate* Isolate)
+{
+    v8::Locker lock(Isolate);
+}
+
+
+V8_EXPORT void UnLock(v8::Isolate* Isolate)
+{
+    v8::Unlocker unlock(Isolate);
 }
 
 //-------------------------- end debug --------------------------
