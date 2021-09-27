@@ -26,7 +26,7 @@ namespace puerts
         v8::Isolate* Isolate = Info.GetIsolate();
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);
-        v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
+        v8::Local<v8::Context> Context = DefaultContext.Get(Isolate);
         v8::Context::Scope ContextScope(Context);
 
         if (Info.Length() != 2 || !Info[0]->IsString() || !Info[1]->IsString())
@@ -183,6 +183,8 @@ namespace puerts
 #else
         v8::Local<v8::Context> Context = v8::Context::New(Isolate);
 #endif
+        DefaultContext.Reset(Isolate, Context);
+
         v8::Context::Scope ContextScope(Context);
         ResultInfo.Context.Reset(Isolate, Context);
         v8::Local<v8::Object> Global = Context->Global();
@@ -414,7 +416,7 @@ namespace puerts
     static void CSharpFunctionCallbackWrap(const v8::FunctionCallbackInfo<v8::Value>& Info)
     {
         v8::Isolate* Isolate = Info.GetIsolate();
-        v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
+        v8::Local<v8::Context> Context = DefaultContext.Get(Isolate);
 
         FCallbackInfo* CallbackInfo = reinterpret_cast<FCallbackInfo*>((v8::Local<v8::External>::Cast(Info.Data()))->Value());
 
@@ -483,7 +485,7 @@ namespace puerts
         v8::Isolate* Isolate = Info.GetIsolate();
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);
-        v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
+        v8::Local<v8::Context> Context = DefaultContext.Get(Isolate);
         v8::Context::Scope ContextScope(Context);
 
         if (Info.IsConstructCall())
@@ -604,7 +606,7 @@ namespace puerts
         v8::Isolate* Isolate = MainIsolate;
         if (ClassID >= Templates.size()) return v8::Undefined(Isolate);
 
-        auto Context = Isolate->GetCurrentContext();
+        auto Context = DefaultContext.Get(Isolate);
 
         auto Result = Templates[ClassID].Get(Isolate)->GetFunction(Context).ToLocalChecked();
         Result->Set(Context, FV8Utils::V8String(Isolate, "$cid"), v8::Integer::New(Isolate, ClassID));

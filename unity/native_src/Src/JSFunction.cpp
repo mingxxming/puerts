@@ -88,12 +88,13 @@ namespace puerts
 
     bool JSFunction::Invoke(bool HasResult)
     {
+        printf("try invoke c++ ---------------------------");
         v8::Isolate* Isolate = ResultInfo.Isolate;
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);
         v8::Local<v8::Context> Context = ResultInfo.Context.Get(Isolate);
         v8::Context::Scope ContextScope(Context);
-        v8::Locker lock(Isolate);
+
         V8Arguments.clear();
         for (int i = 0; i < Arguments.size(); ++i)
         {
@@ -106,8 +107,6 @@ namespace puerts
         if (TryCatch.HasCaught())
         {
             LastExceptionInfo = FV8Utils::ExceptionToString(Isolate, TryCatch);
-            v8::Unlocker unlock(Isolate);
-
             return false;
         }
         else
@@ -116,8 +115,6 @@ namespace puerts
             {
                 ResultInfo.Result.Reset(Isolate, maybeValue.ToLocalChecked());
             }
-            v8::Unlocker unlock(Isolate);
-
             return true;
         }
     }

@@ -205,6 +205,7 @@ private:
     std::vector<int32_t> ObjectMapFreeIndex;
 
     std::mutex JSFunctionsMutex;
+    v8::Global<v8::Context> DefaultContext;
 
     std::mutex JSObjectsMutex;
 
