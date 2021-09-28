@@ -898,7 +898,7 @@ V8_EXPORT void SetStackLimit(v8::Isolate* Isolate, unsigned long long  v)
 
 
     v8::Locker locker(Isolate);
-    Isolate::Scope isolate_scope(Isolate);
+    v8::Isolate::Scope isolate_scope(Isolate);
     {
         Isolate->SetStackLimit(v);
         Isolate->Exit();
