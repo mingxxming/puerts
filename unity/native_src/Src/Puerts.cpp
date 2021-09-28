@@ -898,12 +898,16 @@ V8_EXPORT void SetStackLimit(v8::Isolate* Isolate, unsigned long long  v)
 
 
     v8::Locker locker(Isolate);
-    v8::Isolate::Scope isolate_scope(Isolate);
-    {
-        Isolate->SetStackLimit(v);
-        Isolate->Exit();
-        v8::Unlocker unlocker(Isolate);
-    }
+    Isolate->Enter();
+    Isolate->SetStackLimit(v);
+    //v8::HandleScope handle_scope(Isolate);
+    //v8::Local<v8::Context> context =
+    //    v8::Local<v8::Context>::New(isolate_, context_);
+    //v8::Context::Scope context_scope(context);
+    //// This code triggers deoptimization of some function that will be
+    //// used in a different thread.
+    //CompileRun(source_);
+    Isolate->Exit();
 }
 
 
