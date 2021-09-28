@@ -894,6 +894,7 @@ V8_EXPORT void HeapLimtCallback(v8::Isolate* Isolate, v8::NearHeapLimitCallback 
 
 V8_EXPORT void SetStackLimit(v8::Isolate* Isolate, unsigned long long  v)
 {
+    printf("set stack size %llu \n", v);
     Isolate->SetStackLimit(v);
 }
 
