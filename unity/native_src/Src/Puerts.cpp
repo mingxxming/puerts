@@ -892,6 +892,12 @@ V8_EXPORT void HeapLimtCallback(v8::Isolate* Isolate, v8::NearHeapLimitCallback 
 }
 
 
+V8_EXPORT void SetStackLimit(v8::Isolate* Isolate, unsigned __int64 v)
+{
+    Isolate->SetStackLimit(v);
+}
+
+
 
 //-------------------------- end debug --------------------------
 
