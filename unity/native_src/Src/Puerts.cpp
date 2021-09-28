@@ -879,6 +879,12 @@ V8_EXPORT void UnLock(v8::Isolate* Isolate)
     v8::Unlocker unlock(Isolate);
 }
 
+
+V8_EXPORT void TerrminalExe(v8::Isolate* Isolate)
+{
+    Isolate->TerminateExecution();
+}
+
 //-------------------------- end debug --------------------------
 
 #ifdef __cplusplus
