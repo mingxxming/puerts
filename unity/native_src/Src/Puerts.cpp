@@ -896,11 +896,14 @@ V8_EXPORT void SetStackLimit(v8::Isolate* Isolate, unsigned long long  v)
 {
     printf("set stack size %llu \n", v);
 
-    v8::Isolate::Scope IsolateScope(Isolate);
-    v8::HandleScope HandleScope(Isolate);
-    v8::Locker lock(Isolate);
-    Isolate->SetStackLimit(v);
-    v8::Unlocker unlock(Isolate);
+
+    v8::Locker locker(Isolate);
+    Isolate::Scope isolate_scope(Isolate);
+    {
+        Isolate->SetStackLimit(v);
+        Isolate->Exit();
+        v8::Unlocker unlocker(Isolate);
+    }
 }
 
 

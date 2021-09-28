@@ -88,7 +88,7 @@ namespace puerts
 
     bool JSFunction::Invoke(bool HasResult)
     {
-        printf("try invoke c++ ---------------------------");
+        printf("try invoke c++ ---------------------------\n");
         v8::Isolate* Isolate = ResultInfo.Isolate;
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);
