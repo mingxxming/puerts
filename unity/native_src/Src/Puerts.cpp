@@ -885,6 +885,14 @@ V8_EXPORT void TerrminalExe(v8::Isolate* Isolate)
     Isolate->TerminateExecution();
 }
 
+
+V8_EXPORT void HeapLimtCallback(v8::Isolate* Isolate, v8::NearHeapLimitCallback cb, void* ud)
+{
+    Isolate->AddNearHeapLimitCallback(cb, ud);
+}
+
+
+
 //-------------------------- end debug --------------------------
 
 #ifdef __cplusplus
