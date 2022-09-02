@@ -107,7 +107,7 @@ else ()
     )
 endif ()
 
-# target_compile_definitions (puerts PRIVATE THREAD_SAFE)
+target_compile_definitions (puerts PRIVATE THREAD_SAFE)
 
 if ( WIN32 AND NOT CYGWIN )
     target_compile_definitions (puerts PRIVATE BUILDING_V8_SHARED)
