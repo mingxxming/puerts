@@ -1,9 +1,10 @@
 /*
-* Tencent is pleased to support the open source community by making Puerts available.
-* Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
-* Puerts is licensed under the BSD 3-Clause License, except for the third-party components listed in the file 'LICENSE' which may be subject to their corresponding license terms.
-* This file is subject to the terms and conditions defined in file 'LICENSE', which is part of this source code package.
-*/
+ * Tencent is pleased to support the open source community by making Puerts available.
+ * Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+ * Puerts is licensed under the BSD 3-Clause License, except for the third-party components listed in the file 'LICENSE' which may
+ * be subject to their corresponding license terms. This file is subject to the terms and conditions defined in file 'LICENSE',
+ * which is part of this source code package.
+ */
 
 #pragma once
 
@@ -12,18 +13,24 @@
 #include "StructWrapper.h"
 #include "CppObjectMapper.h"
 #include "V8Utils.h"
+#if !defined(ENGINE_INDEPENDENT_JSENV)
 #include "Engine/Engine.h"
+#endif
 #include "ObjectMapper.h"
 #include "JSLogger.h"
 #include "TickerDelegateWrapper.h"
+#if !defined(ENGINE_INDEPENDENT_JSENV)
 #include "TypeScriptGeneratedClass.h"
+#endif
 #include "ContainerMeta.h"
+#include "ObjectCacheNode.h"
+#include <unordered_map>
 
 #if ENGINE_MINOR_VERSION >= 25 || ENGINE_MAJOR_VERSION > 4
 #include "UObject/WeakFieldPtr.h"
 #endif
 
-#pragma warning(push, 0)  
+#pragma warning(push, 0)
 #include "libplatform/libplatform.h"
 #include "v8.h"
 #pragma warning(pop)
@@ -31,10 +38,16 @@
 #include "V8InspectorImpl.h"
 
 #if defined(WITH_NODEJS)
-#pragma warning(push, 0) 
+#pragma warning(push, 0)
 #include "node.h"
 #include "uv.h"
 #pragma warning(pop)
+#endif
+
+#if V8_MAJOR_VERSION < 8 || defined(WITH_QUICKJS) || defined(WITH_NODEJS) || (WITH_EDITOR && !defined(FORCE_USE_STATIC_V8_LIB))
+#define WITH_BACKING_STORE_AUTO_FREE 0
+#else
+#define WITH_BACKING_STORE_AUTO_FREE 1
 #endif
 
 namespace puerts
@@ -44,27 +57,42 @@ class JSError
 public:
     FString Message;
 
-    JSError() {}
+    JSError()
+    {
+    }
 
-    explicit JSError(const FString& m) : Message(m) {}
+    explicit JSError(const FString& m) : Message(m)
+    {
+    }
 };
 
 class FJsEnvImpl : public IJsEnv, IObjectMapper, public FUObjectArray::FUObjectDeleteListener
 {
 public:
-    explicit FJsEnvImpl(const FString &ScriptRoot);
+    explicit FJsEnvImpl(const FString& ScriptRoot);
 
     FJsEnvImpl(std::shared_ptr<IJSModuleLoader> InModuleLoader, std::shared_ptr<ILogger> InLogger, int InPort,
-        void* InExternalRuntime = nullptr, void* InExternalContext = nullptr);
+        std::function<void(const FString&)> InOnSourceLoadedCallback, void* InExternalRuntime = nullptr,
+        void* InExternalContext = nullptr);
 
-    ~FJsEnvImpl() override;
+    virtual ~FJsEnvImpl() override;
 
-    void Start(const FString& ModuleName, const TArray<TPair<FString, UObject*>> &Arguments) override;
+    virtual void Start(
+        const FString& ModuleNameOrScript, const TArray<TPair<FString, UObject*>>& Arguments, bool IsScript) override;
 
-    void LowMemoryNotification() override;
+    virtual bool IdleNotificationDeadline(double DeadlineInSeconds) override;
 
-    void WaitDebugger(double timeout) override
+    virtual void LowMemoryNotification() override;
+
+    virtual void RequestMinorGarbageCollectionForTesting() override;
+
+    virtual void RequestFullGarbageCollectionForTesting() override;
+
+    virtual void WaitDebugger(double timeout) override
     {
+#ifdef THREAD_SAFE
+        v8::Locker Locker(MainIsolate);
+#endif
         const auto startTime = FDateTime::Now();
         while (Inspector && !Inspector->Tick())
         {
@@ -79,9 +107,11 @@ public:
         }
     }
 
-    virtual void TryBindJs(const class UObjectBase *InObject) override;
+#if !defined(ENGINE_INDEPENDENT_JSENV)
+    virtual void TryBindJs(const class UObjectBase* InObject) override;
 
     virtual void RebindJs() override;
+#endif
 
     virtual FString CurrentStackTrace() override;
 
@@ -91,97 +121,129 @@ public:
 
     virtual void ReloadModule(FName ModuleName, const FString& JsSource) override;
 
+    virtual void ReloadSource(const FString& Path, const std::string& JsSource) override;
+
+    std::function<void(const FString&)> OnSourceLoadedCallback;
+
+    virtual void OnSourceLoaded(std::function<void(const FString&)> Callback) override;
+
 public:
-    void Bind(UClass *Class, UObject *UEObject, v8::Local<v8::Object> JSObject) override;
+    virtual void Bind(UClass* Class, UObject* UEObject, v8::Local<v8::Object> JSObject) override;
 
-    void UnBind(UClass *Class, UObject *UEObject) override;
+    virtual void UnBind(UClass* Class, UObject* UEObject) override;
 
-    void UnBind(UClass *Class, UObject *UEObject, bool ResetPointer);
+    virtual void UnBind(UClass* Class, UObject* UEObject, bool ResetPointer);
 
-    v8::Local<v8::Value> FindOrAdd(v8::Isolate* InIsolate, v8::Local<v8::Context>& Context, UClass *Class, UObject *UEObject) override;
+    virtual v8::Local<v8::Value> FindOrAdd(
+        v8::Isolate* InIsolate, v8::Local<v8::Context>& Context, UClass* Class, UObject* UEObject) override;
 
-    void BindStruct(FScriptStructWrapper* ScriptStructWrapper, void *Ptr, v8::Local<v8::Object> JSObject, bool PassByPointer) override;
+    virtual void BindStruct(
+        FScriptStructWrapper* ScriptStructWrapper, void* Ptr, v8::Local<v8::Object> JSObject, bool PassByPointer) override;
 
-    void UnBindStruct(void *Ptr) override;
+    virtual void UnBindStruct(FScriptStructWrapper* ScriptStructWrapper, void* Ptr) override;
 
-    void UnBindCppObject(JSClassDefinition* ClassDefinition, void *Ptr) override;
+    virtual void UnBindCppObject(JSClassDefinition* ClassDefinition, void* Ptr) override;
 
-    v8::Local<v8::Value> FindOrAddStruct(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UScriptStruct* ScriptStruct, void *Ptr, bool PassByPointer) override;
+    virtual v8::Local<v8::Value> FindOrAddStruct(
+        v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UScriptStruct* ScriptStruct, void* Ptr, bool PassByPointer) override;
 
-    void BindCppObject(v8::Isolate* InIsolate, JSClassDefinition* ClassDefinition, void *Ptr, v8::Local<v8::Object> JSObject, bool PassByPointer) override;
+    virtual void BindCppObject(v8::Isolate* InIsolate, JSClassDefinition* ClassDefinition, void* Ptr,
+        v8::Local<v8::Object> JSObject, bool PassByPointer) override;
 
-    v8::Local<v8::Value> FindOrAddCppObject(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, const char* CDataName, void *Ptr, bool PassByPointer) override;
+    virtual v8::Local<v8::Value> FindOrAddCppObject(
+        v8::Isolate* Isolate, v8::Local<v8::Context>& Context, const void* TypeId, void* Ptr, bool PassByPointer) override;
 
-    void Merge(v8::Isolate* Isolate, v8::Local<v8::Context> Context, v8::Local<v8::Object> Src, UStruct* DesType, void* Des) override;
+    virtual void Merge(
+        v8::Isolate* Isolate, v8::Local<v8::Context> Context, v8::Local<v8::Object> Src, UStruct* DesType, void* Des) override;
 
-    void BindContainer(void* Ptr, v8::Local<v8::Object> JSObject, void(*Callback)(const v8::WeakCallbackInfo<void>& data)) override;
+    virtual void BindContainer(
+        void* Ptr, v8::Local<v8::Object> JSObject, void (*Callback)(const v8::WeakCallbackInfo<void>& data)) override;
 
-    void UnBindContainer(void* Ptr) override;
+    virtual void UnBindContainer(void* Ptr) override;
 
-    v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, v8::Local<v8::Function> Constructor, PropertyMacro* Property1, PropertyMacro* Property2, void *Ptr, bool PassByPointer);
+    virtual v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context,
+        v8::Local<v8::Function> Constructor, PropertyMacro* Property1, PropertyMacro* Property2, void* Ptr, bool PassByPointer);
 
-    v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, PropertyMacro* Property, FScriptArray *Ptr, bool PassByPointer) override;
+    virtual v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, PropertyMacro* Property,
+        FScriptArray* Ptr, bool PassByPointer) override;
 
-    v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, PropertyMacro* Property, FScriptSet *Ptr, bool PassByPointer) override;
+    virtual v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, PropertyMacro* Property,
+        FScriptSet* Ptr, bool PassByPointer) override;
 
-    v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, PropertyMacro* KeyProperty, PropertyMacro* ValueProperty, FScriptMap *Ptr, bool PassByPointer) override;
+    virtual v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context,
+        PropertyMacro* KeyProperty, PropertyMacro* ValueProperty, FScriptMap* Ptr, bool PassByPointer) override;
 
-    v8::Local<v8::Value> FindOrAddDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner, PropertyMacro* Property, void *DelegatePtr, bool PassByPointer) override;
+    virtual v8::Local<v8::Value> FindOrAddDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner,
+        PropertyMacro* Property, void* DelegatePtr, bool PassByPointer) override;
 
-    bool AddToDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void *DelegatePtr, v8::Local<v8::Function> JsFunction) override;
+    virtual bool AddToDelegate(
+        v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void* DelegatePtr, v8::Local<v8::Function> JsFunction) override;
 
-    PropertyMacro *FindDelegateProperty(void *DelegatePtr) override;
+    virtual PropertyMacro* FindDelegateProperty(void* DelegatePtr) override;
 
-    FScriptDelegate NewManualReleaseDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, v8::Local<v8::Function> JsFunction, UFunction* SignatureFunction) override;
+    virtual FScriptDelegate NewManualReleaseDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context,
+        v8::Local<v8::Function> JsFunction, UFunction* SignatureFunction) override;
 
     void ReleaseManualReleaseDelegate(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    bool RemoveFromDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void *DelegatePtr, v8::Local<v8::Function> JsFunction) override;
+    virtual bool RemoveFromDelegate(
+        v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void* DelegatePtr, v8::Local<v8::Function> JsFunction) override;
 
-    bool ClearDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void *DelegatePtr) override;
+    virtual bool ClearDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, void* DelegatePtr) override;
 
-    void ExecuteDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, const v8::FunctionCallbackInfo<v8::Value>& Info, void *DelegatePtr) override;
+    virtual void ExecuteDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context,
+        const v8::FunctionCallbackInfo<v8::Value>& Info, void* DelegatePtr) override;
 
-    bool IsInstanceOf(UStruct *Struct, v8::Local<v8::Object> JsObject) override;
+    virtual bool IsInstanceOf(UStruct* Struct, v8::Local<v8::Object> JsObject) override;
 
-    bool IsInstanceOfCppObject(const char* CDataName, v8::Local<v8::Object> JsObject) override;
+    virtual bool IsInstanceOfCppObject(const void* TypeId, v8::Local<v8::Object> JsObject) override;
 
-    bool CheckDelegateProxys(float tick);
+    virtual v8::Local<v8::Value> AddSoftObjectPtr(v8::Isolate* Isolate, v8::Local<v8::Context> Context,
+        FSoftObjectPtr* SoftObjectPtr, UClass* Class, bool IsSoftClass) override;
 
-    v8::Local<v8::Value> CreateArray(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, FPropertyTranslator* Property, void* ArrayPtr) override;
+    bool CheckDelegateProxies(float Tick);
 
-    void InvokeJsCallback(UDynamicDelegateProxy* Proxy, void* Parms);
+    virtual v8::Local<v8::Value> CreateArray(
+        v8::Isolate* Isolate, v8::Local<v8::Context>& Context, FPropertyTranslator* Property, void* ArrayPtr) override;
 
-    void Construct(UClass* Class, UObject* Object, const v8::UniquePersistent<v8::Function> &Constructor, const v8::UniquePersistent<v8::Object> &Prototype);
+    void InvokeDelegateCallback(UDynamicDelegateProxy* Proxy, void* Params);
+
+#if !defined(ENGINE_INDEPENDENT_JSENV)
+    void JsConstruct(UClass* Class, UObject* Object, const v8::UniquePersistent<v8::Function>& Constructor,
+        const v8::UniquePersistent<v8::Object>& Prototype);
 
     void TsConstruct(UTypeScriptGeneratedClass* Class, UObject* Object);
 
-    void InvokeJsMethod(UObject *ContextObject, UJSGeneratedFunction* Function, FFrame &Stack, void *RESULT_PARAM);
+    void InvokeJsMethod(UObject* ContextObject, UJSGeneratedFunction* Function, FFrame& Stack, void* RESULT_PARAM);
 
-    void InvokeTsMethod(UObject *ContextObject, UFunction *Function, FFrame &Stack, void *RESULT_PARAM);
+    void InvokeMixinMethod(UObject* ContextObject, UJSGeneratedFunction* Function, FFrame& Stack, void* RESULT_PARAM);
+
+    void InvokeTsMethod(UObject* ContextObject, UFunction* Function, FFrame& Stack, void* RESULT_PARAM);
 
     void NotifyReBind(UTypeScriptGeneratedClass* Class);
+#endif
 
     v8::UniquePersistent<v8::Function> JsPromiseRejectCallback;
 
-    V8_INLINE static FJsEnvImpl * Get(v8::Isolate* Isolate)
+    V8_INLINE static FJsEnvImpl* Get(v8::Isolate* Isolate)
     {
         return static_cast<FJsEnvImpl*>(FV8Utils::IsolateData<IObjectMapper>(Isolate));
     }
 
 public:
 #if ENGINE_MINOR_VERSION > 22 || ENGINE_MAJOR_VERSION > 4
-    void OnUObjectArrayShutdown() override
+    virtual void OnUObjectArrayShutdown() override
     {
         GUObjectArray.RemoveUObjectDeleteListener(static_cast<FUObjectArray::FUObjectDeleteListener*>(this));
     }
 #endif
-    void NotifyUObjectDeleted(const class UObjectBase *Object, int32 Index) override;
+    virtual void NotifyUObjectDeleted(const class UObjectBase* Object, int32 Index) override;
 
-    void TryReleaseType(UStruct *Struct);
+    void TryReleaseType(UStruct* Struct);
 
 private:
-    bool LoadFile(const FString& RequiringDir, const FString& ModuleName, FString& OutPath, FString& OutDebugPath, TArray<uint8>& Data, FString &ErrInfo);
+    bool LoadFile(const FString& RequiringDir, const FString& ModuleName, FString& OutPath, FString& OutDebugPath,
+        TArray<uint8>& Data, FString& ErrInfo);
 
     void ExecuteModule(const FString& ModuleName, std::function<FString(const FString&, const FString&)> Preprocessor = nullptr);
 
@@ -189,19 +251,27 @@ private:
 
     void Log(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
+    void SearchModule(const v8::FunctionCallbackInfo<v8::Value>& Info);
+
     void LoadModule(const v8::FunctionCallbackInfo<v8::Value>& Info);
+
+    v8::Local<v8::Value> UETypeToJsClass(v8::Isolate* Isolate, v8::Local<v8::Context> Context, UField* Type);
 
     void LoadUEType(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
+    void LoadCppType(const v8::FunctionCallbackInfo<v8::Value>& Info);
+
     void UEClassToJSClass(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    bool GetContainerTypeProperty(v8::Local<v8::Context> Context, v8::Local<v8::Value> Value, PropertyMacro ** PropertyPtr);
+    bool GetContainerTypeProperty(v8::Local<v8::Context> Context, v8::Local<v8::Value> Value, PropertyMacro** PropertyPtr);
 
     void NewContainer(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    v8::Local<v8::FunctionTemplate> GetTemplateOfClass(UStruct *Class, bool &Existed);
+    std::shared_ptr<FStructWrapper> GetStructWrapper(UStruct* InStruct);
 
-    v8::Local<v8::Function> GetJsClass(UStruct *Class, v8::Local<v8::Context> Context);
+    v8::Local<v8::FunctionTemplate> GetTemplateOfClass(UStruct* Class, bool& Existed);
+
+    v8::Local<v8::Function> GetJsClass(UStruct* Class, v8::Local<v8::Context> Context);
 
     FPropertyTranslator* GetContainerPropertyTranslator(PropertyMacro* Property);
 
@@ -209,7 +279,8 @@ private:
 
     void SetFTickerDelegate(const v8::FunctionCallbackInfo<v8::Value>& Info, bool Continue);
 
-    void ReportExecutionException(v8::Isolate* Isolate, v8::TryCatch* TryCatch, std::function<void(const JSError*)> CompletionHandler);
+    void ReportExecutionException(
+        v8::Isolate* Isolate, v8::TryCatch* TryCatch, std::function<void(const JSError*)> CompletionHandler);
 
     void RemoveFTickerDelegateHandle(FDelegateHandle* Handle);
 
@@ -223,37 +294,56 @@ private:
 
     void NewStructByScriptStruct(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
+#if !defined(ENGINE_INDEPENDENT_JSENV)
     void MakeUClass(const v8::FunctionCallbackInfo<v8::Value>& Info);
+
+    TArray<TWeakObjectPtr<UClass>> MixinClasses;
+    void Mixin(const v8::FunctionCallbackInfo<v8::Value>& Info);
+#endif
 
     void FindModule(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    void DumpStatisticsLog(const v8::FunctionCallbackInfo<v8::Value> &Info);
+    void DumpStatisticsLog(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    void SetInspectorCallback(const v8::FunctionCallbackInfo<v8::Value> &Info);
+    void SetInspectorCallback(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    void DispatchProtocolMessage(const v8::FunctionCallbackInfo<v8::Value> &Info);
+    void DispatchProtocolMessage(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
-    void OnAsyncLoadingFlushUpdate();
+#ifndef WITH_QUICKJS
+    v8::MaybeLocal<v8::Module> FetchESModuleTree(v8::Local<v8::Context> Context, const FString& FileName);
 
-    void ConstructPendingObject(UObject* PendingObject);
+    v8::MaybeLocal<v8::Module> FetchCJSModuleAsESModule(v8::Local<v8::Context> Context, const FString& ModuleName);
+
+    struct FModuleInfo
+    {
+        v8::Global<v8::Module> Module;
+        TMap<FString, v8::Global<v8::Module>> ResolveCache;
+        v8::Global<v8::Value> CJSValue;
+    };
+
+    std::unordered_multimap<int, FModuleInfo*>::iterator FindModuleInfo(v8::Local<v8::Module> Module);
+
+    static v8::MaybeLocal<v8::Module> ResolveModuleCallback(
+        v8::Local<v8::Context> Context, v8::Local<v8::String> Specifier, v8::Local<v8::Module> Referrer);
+#endif
 
     struct ObjectMerger;
 
-    std::unique_ptr<ObjectMerger>& GetObjectMerger(UStruct * Struct);
+    std::unique_ptr<ObjectMerger>& GetObjectMerger(UStruct* Struct);
 
     struct ObjectMerger
     {
         std::map<std::string, std::unique_ptr<FPropertyTranslator>> Fields;
-        UStruct *Struct;
+        UStruct* Struct;
         FJsEnvImpl* Parent;
 
-        ObjectMerger(FJsEnvImpl* InParent, UStruct *InStruct)
+        ObjectMerger(FJsEnvImpl* InParent, UStruct* InStruct)
         {
             Parent = InParent;
             Struct = InStruct;
             for (TFieldIterator<PropertyMacro> It(Struct); It; ++It)
             {
-                PropertyMacro *Property = *It;
+                PropertyMacro* Property = *It;
                 TStringConversion<TStringConvert<TCHAR, ANSICHAR>> Name(*Property->GetName());
                 Fields[Name.Get()] = FPropertyTranslator::Create(Property);
             }
@@ -263,8 +353,9 @@ private:
         {
             if (auto Class = Cast<UClass>(Struct))
             {
-                UObject *Object = reinterpret_cast<UObject *>(Ptr);
-                if (!Object->IsValidLowLevel() || Object->IsPendingKill() || Object->GetClass() != Class || FV8Utils::GetPointer(JsObject))
+                UObject* Object = reinterpret_cast<UObject*>(Ptr);
+                if (!Object->IsValidLowLevel() || Object->IsPendingKill() || Object->GetClass() != Class ||
+                    FV8Utils::GetPointer(JsObject))
                 {
                     return;
                 }
@@ -285,7 +376,7 @@ private:
                             auto JsObjectField = Value->ToObject(Context).ToLocalChecked();
                             if (!FV8Utils::GetPointerFast<void>(JsObjectField))
                             {
-                                UStruct *FieldStruct = nullptr;
+                                UStruct* FieldStruct = nullptr;
                                 if (auto ObjectPropertyBase = CastFieldMacro<ObjectPropertyBaseMacro>(Iter->second->Property))
                                 {
                                     FieldStruct = ObjectPropertyBase->PropertyClass;
@@ -296,47 +387,57 @@ private:
                                 }
                                 if (FieldStruct)
                                 {
-                                    Parent->GetObjectMerger(FieldStruct)->Merge(Isolate, Context, JsObjectField, Iter->second->Property->ContainerPtrToValuePtr<void>(Ptr));
+                                    Parent->GetObjectMerger(FieldStruct)
+                                        ->Merge(Isolate, Context, JsObjectField,
+                                            Iter->second->Property->ContainerPtrToValuePtr<void>(Ptr));
                                 }
                                 continue;
                             }
                         }
-                        if (!Value->IsUndefined())Iter->second->JsToUEInContainer(Isolate, Context, Value, Ptr, true);
+                        if (!Value->IsUndefined())
+                            Iter->second->JsToUEInContainer(Isolate, Context, Value, Ptr, true);
                     }
                 }
             }
         }
     };
 
-
     friend ObjectMerger;
 
 public:
+#if !defined(ENGINE_INDEPENDENT_JSENV)
     class TsDynamicInvokerImpl : public ITsDynamicInvoker
     {
     public:
-        TsDynamicInvokerImpl(FJsEnvImpl *InParent) :Parent(InParent) {}
-
-        void TsConstruct(UTypeScriptGeneratedClass* Class, UObject* Object) override
+        TsDynamicInvokerImpl(FJsEnvImpl* InParent) : Parent(InParent)
         {
-            if (Parent) Parent->TsConstruct(Class, Object);
         }
 
-        void InvokeTsMethod(UObject *ContextObject, UFunction *Function, FFrame &Stack, void *RESULT_PARAM) override
+        virtual void TsConstruct(UTypeScriptGeneratedClass* Class, UObject* Object) override
         {
-            if (Parent) Parent->InvokeTsMethod(ContextObject, Function, Stack, RESULT_PARAM);
+            if (Parent)
+                Parent->TsConstruct(Class, Object);
         }
 
-        void NotifyReBind(UTypeScriptGeneratedClass* Class) override
+        virtual void InvokeTsMethod(UObject* ContextObject, UFunction* Function, FFrame& Stack, void* RESULT_PARAM) override
         {
-            if (Parent) Parent->NotifyReBind(Class);
+            if (Parent)
+                Parent->InvokeTsMethod(ContextObject, Function, Stack, RESULT_PARAM);
         }
 
-        FJsEnvImpl *Parent;
+        virtual void NotifyReBind(UTypeScriptGeneratedClass* Class) override
+        {
+            if (Parent)
+                Parent->NotifyReBind(Class);
+        }
+
+        FJsEnvImpl* Parent;
     };
 
-    TSharedPtr<ITsDynamicInvoker> TsDynamicInvoker;
+    TSharedPtr<ITsDynamicInvoker, ESPMode::ThreadSafe> TsDynamicInvoker;
 
+    TSharedPtr<IDynamicInvoker, ESPMode::ThreadSafe> MixinInvoker;
+#endif
 private:
     puerts::FObjectRetainer UserObjectRetainer;
 
@@ -353,16 +454,38 @@ private:
 
 #if defined(WITH_NODEJS)
     uv_loop_t NodeUVLoop;
-    
+
     std::unique_ptr<node::ArrayBufferAllocator> NodeArrayBufferAllocator;
 
     node::IsolateData* NodeIsolateData;
 
     node::Environment* NodeEnv;
 
-    const float UV_LOOP_DELAY  = 0.1;
-    
-    FDelegateHandle UVLoopCallbackHandler;
+    uv_thread_t PollingThread;
+
+    uv_sem_t PollingSem;
+
+    uv_async_t DummyUVHandle;
+
+    bool PollingClosed = false;
+
+    FGraphEventRef LastJob;
+
+#if PLATFORM_LINUX
+    int Epoll;
+#endif
+
+    void StartPolling();
+
+    void UvRunOnce();
+
+    void PollEvents();
+
+    static void OnWatcherQueueChanged(uv_loop_t* loop);
+
+    void WakeupPollingThread();
+
+    void StopPolling();
 #endif
 
     v8::Isolate* MainIsolate;
@@ -373,23 +496,27 @@ private:
 
     v8::Global<v8::Function> ReloadJs;
 
-    std::map<UStruct*, v8::UniquePersistent<v8::FunctionTemplate>> ClassToTemplateMap;
+    TMap<UStruct*, v8::UniquePersistent<v8::FunctionTemplate>> ClassToTemplateMap;
 
-    std::map<UStruct*, std::pair<std::unique_ptr<FStructWrapper>, int>> TypeReflectionMap;
+    TMap<FString, std::shared_ptr<FStructWrapper>> TypeReflectionMap;
 
-    std::map<UObject*, v8::UniquePersistent<v8::Value> > ObjectMap;
-    std::map<const class UObjectBase*, v8::UniquePersistent<v8::Value> > GeneratedObjectMap;
+    TMap<UObject*, v8::UniquePersistent<v8::Value>> ObjectMap;
+    TMap<const class UObjectBase*, v8::UniquePersistent<v8::Value>> GeneratedObjectMap;
 
-    std::map<void*, v8::UniquePersistent<v8::Value> > StructMap;
+    TMap<void*, FObjectCacheNode> StructCache;
+
+    TMap<void*, v8::UniquePersistent<v8::Value>> ContainerCache;
 
     FCppObjectMapper CppObjectMapper;
 
+#if !WITH_BACKING_STORE_AUTO_FREE && !defined(HAS_ARRAYBUFFER_NEW_WITHOUT_STL)
     struct ScriptStructFinalizeInfo
     {
         TWeakObjectPtr<UStruct> Struct;
         FinalizeFunc Finalize;
     };
-    std::map<void*, ScriptStructFinalizeInfo> ScriptStructFinalizeInfoMap;
+    TMap<void*, ScriptStructFinalizeInfo> ScriptStructFinalizeInfoMap;
+#endif
 
     v8::UniquePersistent<v8::FunctionTemplate> ArrayTemplate;
 
@@ -408,23 +535,23 @@ private:
 #endif
         std::unique_ptr<FPropertyTranslator> PropertyTranslator;
     };
-    
+
     std::map<PropertyMacro*, ContainerPropertyInfo> ContainerPropertyMap;
 
     std::map<UFunction*, std::unique_ptr<FFunctionTranslator>> JsCallbackPrototypeMap;
 
-    std::map<UStruct *, std::unique_ptr<ObjectMerger>> ObjectMergers;
+    std::map<UStruct*, std::unique_ptr<ObjectMerger>> ObjectMergers;
 
     struct DelegateObjectInfo
     {
-        v8::UniquePersistent<v8::Object> JSObject;//function to proxy save here
-        TWeakObjectPtr<UObject> Owner;//可用于自动清理
-        DelegatePropertyMacro *DelegateProperty;
-        MulticastDelegatePropertyMacro *MulticastDelegateProperty;
-        UFunction *SignatureFunction;
+        v8::UniquePersistent<v8::Object> JSObject;    // function to proxy save here
+        TWeakObjectPtr<UObject> Owner;                //可用于自动清理
+        DelegatePropertyMacro* DelegateProperty;
+        MulticastDelegatePropertyMacro* MulticastDelegateProperty;
+        UFunction* SignatureFunction;
         bool PassByPointer;
-        TWeakObjectPtr<UDynamicDelegateProxy> Proxy;//for delegate
-        TSet<TWeakObjectPtr<UDynamicDelegateProxy>> Proxys; // for MulticastDelegate
+        TWeakObjectPtr<UDynamicDelegateProxy> Proxy;           // for delegate
+        TSet<TWeakObjectPtr<UDynamicDelegateProxy>> Proxys;    // for MulticastDelegate
     };
 
     struct TsFunctionInfo
@@ -437,48 +564,69 @@ private:
     class DynamicInvokerImpl : public IDynamicInvoker
     {
     public:
-        DynamicInvokerImpl(FJsEnvImpl *InParent) :Parent(InParent) {}
-
-        void InvokeJsCallabck(UDynamicDelegateProxy* Proxy, void* Parms) override
+        DynamicInvokerImpl(FJsEnvImpl* InParent) : Parent(InParent)
         {
-            if (Parent) Parent->InvokeJsCallback(Proxy, Parms);
         }
 
-        void Construct(UClass* Class, UObject* Object, const v8::UniquePersistent<v8::Function> &Constructor, const v8::UniquePersistent<v8::Object> &Prototype) override
+        virtual void InvokeDelegateCallback(UDynamicDelegateProxy* Proxy, void* Params) override
         {
-            if (Parent) Parent->Construct(Class, Object, Constructor, Prototype);
+            if (Parent)
+                Parent->InvokeDelegateCallback(Proxy, Params);
+        }
+#if !defined(ENGINE_INDEPENDENT_JSENV)
+        virtual void JsConstruct(UClass* Class, UObject* Object, const v8::UniquePersistent<v8::Function>& Constructor,
+            const v8::UniquePersistent<v8::Object>& Prototype) override
+        {
+            if (Parent)
+                Parent->JsConstruct(Class, Object, Constructor, Prototype);
         }
 
-        void InvokeJsMethod(UObject *ContextObject, UJSGeneratedFunction* Function, FFrame &Stack, void *RESULT_PARAM) override
+        virtual void InvokeJsMethod(
+            UObject* ContextObject, UJSGeneratedFunction* Function, FFrame& Stack, void* RESULT_PARAM) override
         {
-            if (Parent) Parent->InvokeJsMethod(ContextObject, Function, Stack, RESULT_PARAM);
+            if (Parent)
+                Parent->InvokeJsMethod(ContextObject, Function, Stack, RESULT_PARAM);
         }
 
-        FJsEnvImpl *Parent;
+        virtual void InvokeMixinMethod(
+            UObject* ContextObject, UJSGeneratedFunction* Function, FFrame& Stack, void* RESULT_PARAM) override
+        {
+            if (Parent)
+                Parent->InvokeMixinMethod(ContextObject, Function, Stack, RESULT_PARAM);
+        }
+#endif
+        FJsEnvImpl* Parent;
     };
-
+#if !defined(ENGINE_INDEPENDENT_JSENV)
     struct FBindInfo
     {
         FName Name;
         v8::UniquePersistent<v8::Function> Constructor;
         v8::UniquePersistent<v8::Object> Prototype;
+        bool InjectNotFinished;
     };
 
-    std::map<UTypeScriptGeneratedClass*, FBindInfo> BindInfoMap;
+    TMap<UTypeScriptGeneratedClass*, FBindInfo> BindInfoMap;
+
+    void FinishInjection(UClass* InClass);
 
     void MakeSureInject(UTypeScriptGeneratedClass* Class, bool ForceReinject, bool RebindObject);
+#endif
+    TSharedPtr<DynamicInvokerImpl, ESPMode::ThreadSafe> DynamicInvoker;
 
-    TSharedPtr<DynamicInvokerImpl> DynamicInvoker;
-
-    TSet<UClass *> GeneratedClasses;
+    TSet<UClass*> GeneratedClasses;
 
     v8::UniquePersistent<v8::FunctionTemplate> DelegateTemplate;
 
     v8::UniquePersistent<v8::FunctionTemplate> MulticastDelegateTemplate;
 
+    v8::UniquePersistent<v8::FunctionTemplate> SoftObjectPtrTemplate;
+
     std::map<void*, DelegateObjectInfo> DelegateMap;
 
-    std::map<UFunction*, TsFunctionInfo> TsFunctionMap;
+    TMap<UFunction*, TsFunctionInfo> TsFunctionMap;
+
+    TMap<UFunction*, v8::UniquePersistent<v8::Function>> MixinFunctionMap;
 
     std::map<UStruct*, std::vector<UFunction*>> ExtensionMethodsMap;
 
@@ -486,7 +634,7 @@ private:
 
     std::map<FDelegateHandle*, FTickerDelegateWrapper*> TickerDelegateHandleMap;
 
-    FDelegateHandle DelegateProxysCheckerHandler;
+    FDelegateHandle DelegateProxiesCheckerHandler;
 
     V8Inspector* Inspector;
 
@@ -500,12 +648,38 @@ private:
 
     std::vector<TWeakObjectPtr<UDynamicDelegateProxy>> ManualReleaseCallbackList;
 
-    FCriticalSection PendingConstructLock;
-    
-    TArray<TWeakObjectPtr<UObject>> PendingConstructObjects;
-    
-    FDelegateHandle AsyncLoadingFlushUpdateHandle;
+#ifndef WITH_QUICKJS
+    TMap<FString, v8::Global<v8::Module>> PathToModule;
 
+    std::unordered_multimap<int, FModuleInfo*> HashToModuleInfo;
+#endif
+
+#ifdef SINGLE_THREAD_VERIFY
+    uint32 BoundThreadId;
+#endif
+
+    typedef void (FJsEnvImpl::*V8MethodCallback)(const v8::FunctionCallbackInfo<v8::Value>& Info);
+
+    template <V8MethodCallback callback>
+    struct MethodBindingHelper
+    {
+        static void Bind(v8::Isolate* Isolate, v8::Local<v8::Context> Context, v8::Local<v8::Object> Obj, const char* Key,
+            v8::Local<v8::External> This)
+        {
+            Obj->Set(Context, FV8Utils::ToV8String(Isolate, Key),
+                   v8::FunctionTemplate::New(
+                       Isolate,
+                       [](const v8::FunctionCallbackInfo<v8::Value>& Info)
+                       {
+                           auto Self = static_cast<FJsEnvImpl*>((v8::Local<v8::External>::Cast(Info.Data()))->Value());
+                           (Self->*callback)(Info);
+                       },
+                       This)
+                       ->GetFunction(Context)
+                       .ToLocalChecked())
+                .Check();
+        }
+    };
 };
 
-}
+}    // namespace puerts

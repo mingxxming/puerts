@@ -31,6 +31,10 @@ public class DeclarationGenerator : ModuleRules {
                 "InputCore",
                 "Projects",
                 "JsEnv",
+                "Puerts",
+#if UE_5_0_OR_LATER
+                "ToolMenus",
+#endif
             }
         );
 

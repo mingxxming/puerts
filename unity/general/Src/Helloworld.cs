@@ -5,28 +5,7 @@
 * This file is subject to the terms and conditions defined in file 'LICENSE', which is part of this source code package.
 */
 
-using System.IO;
-using System.Reflection;
 using Puerts;
-
-public class TxtLoader : ILoader
-{
-    private string root = Path.Combine(
-        System.Text.RegularExpressions.Regex.Replace(Path.GetDirectoryName(Assembly.GetExecutingAssembly().GetName().CodeBase), "^file:(\\\\)?", ""),
-        "../../Assets/Puerts/Src/Resources"
-    );
-
-    public bool FileExists(string filepath)
-    {
-        return File.Exists(Path.Combine(root, filepath + ".txt"));
-    }
-
-    public string ReadFile(string filepath, out string debugpath)
-    {
-        debugpath = Path.Combine(root, filepath);
-        return File.ReadAllText(debugpath + ".txt");
-    }
-}
 
 public class PuertsTest
 {
@@ -37,7 +16,6 @@ public class PuertsTest
             const CS = require('csharp');
             CS.System.Console.WriteLine('hello world');
         ");
-
         jsEnv.Dispose();
     }
 }

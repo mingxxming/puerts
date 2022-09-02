@@ -11,23 +11,50 @@ using System.Reflection;
 
 public class JsEnv : ModuleRules
 {
-    private bool UseNewV8 = false;
+    private bool UseNewV8 = 
+#if UE_4_25_OR_LATER
+        true;
+#else
+        false;
+#endif
 
     private bool UseNodejs = false;
+
+    private bool Node16 = true;
 
     private bool UseQuickjs = false;
 
     private bool WithFFI = false;
+    
+    private bool ForceStaticLibInEditor = false;
+
+    private bool ThreadSafe = false;
+
+    private bool FTextAsString = true;
 
     public JsEnv(ReadOnlyTargetRules Target) : base(Target)
     {
         //PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDefinitions.Add("USING_IN_UNREAL_ENGINE");
+        
+        PublicDefinitions.Add("TS_BLUEPRINT_PATH=\"/Blueprints/TypeScript/\"");
+        
+        PublicDefinitions.Add(ThreadSafe ? "THREAD_SAFE" : "NOT_THREAD_SAFE");
+
+        if (!FTextAsString)
+        {
+            PublicDefinitions.Add("PUERTS_FTEXT_AS_OBJECT");
+        }
 
         PublicDependencyModuleNames.AddRange(new string[]
         {
-            "Core", "CoreUObject", "Engine", "InputCore", "Serialization", "OpenSSL","UMG"
+            "Core", "CoreUObject", "Engine", "ParamDefaultValueMetas", "UMG"
         });
+
+        if (Target.bBuildEditor)
+        {
+            PublicDependencyModuleNames.AddRange(new string[] { "DirectoryWatcher", });
+        }
 
         bEnableExceptions = true;
         bEnableUndefinedIdentifierWarnings = false; // 避免在VS 2017编译时出现C4668错误
@@ -41,17 +68,17 @@ public class JsEnv : ModuleRules
             }
         }
 
-        if (UseNewV8)
-        {
-            ThirdParty(Target);
-        }
-        else if (UseNodejs)
+        if (UseNodejs)
         {
             ThirdPartyNodejs(Target);
         }
         else if (UseQuickjs)
         {
             ThirdPartyQJS(Target);
+        }
+        else if (UseNewV8)
+        {
+            ThirdParty(Target);
         }
         else
         {
@@ -67,7 +94,7 @@ public class JsEnv : ModuleRules
 
     void OldThirdParty(ReadOnlyTargetRules Target)
     {
-        string LibraryPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "Library"));
+        string LibraryPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "v8_for_ue424_or_below", "Lib"));
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
             //if (Target.bBuildEditor)
@@ -76,7 +103,7 @@ public class JsEnv : ModuleRules
             //}
             //else
             {
-                string V8LibraryPath = Path.Combine(LibraryPath, "V8", "Win64");
+                string V8LibraryPath = Path.Combine(LibraryPath, "Win64");
 
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "encoding.lib"));
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "inspector.lib"));
@@ -95,7 +122,7 @@ public class JsEnv : ModuleRules
             if (Target.Version.MajorVersion == 4 && Target.Version.MinorVersion >= 25)
             {
                 // for arm7
-                string V8LibraryPath = Path.Combine(LibraryPath, "V8", "Android", "armeabi-v7a", "8.4.371.19");
+                string V8LibraryPath = Path.Combine(LibraryPath, "Android", "armeabi-v7a", "8.4.371.19");
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libwee8.a"));
                 // for arm64
                 V8LibraryPath = Path.Combine(LibraryPath, "V8", "Android", "arm64-v8a", "8.4.371.19");
@@ -104,7 +131,7 @@ public class JsEnv : ModuleRules
             else if (Target.Version.MajorVersion == 4 && Target.Version.MinorVersion < 25 && Target.Version.MinorVersion >= 22)
             {
                 // for arm7
-                string V8LibraryPath = Path.Combine(LibraryPath, "V8", "Android", "armeabi-v7a", "7.4.288");
+                string V8LibraryPath = Path.Combine(LibraryPath, "Android", "armeabi-v7a", "7.4.288");
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libinspector.a"));
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_base.a"));
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_external_snapshot.a"));
@@ -112,7 +139,7 @@ public class JsEnv : ModuleRules
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libplatform.a"));
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libsampler.a"));
                 // for arm64
-                V8LibraryPath = Path.Combine(LibraryPath, "V8", "Android", "arm64-v8a", "7.4.288");
+                V8LibraryPath = Path.Combine(LibraryPath, "Android", "arm64-v8a", "7.4.288");
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libinspector.a"));
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_base.a"));
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_external_snapshot.a"));
@@ -120,11 +147,12 @@ public class JsEnv : ModuleRules
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libplatform.a"));
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libsampler.a"));
             } 
+#if !UE_4_22_OR_LATER
             else if (Target.Version.MajorVersion == 4 && Target.Version.MinorVersion < 22) 
             {
-                string V8LibraryPath = Path.Combine(LibraryPath, "V8", "Android", "armeabi-v7a", "7.4.288");
+                string V8LibraryPath = Path.Combine(LibraryPath, "Android", "armeabi-v7a", "7.4.288");
                 PublicLibraryPaths.Add(V8LibraryPath);
-                V8LibraryPath = Path.Combine(LibraryPath, "V8", "Android", "arm64-v8a", "7.4.288");
+                V8LibraryPath = Path.Combine(LibraryPath, "Android", "arm64-v8a", "7.4.288");
                 PublicLibraryPaths.Add(V8LibraryPath);
                 PublicAdditionalLibraries.Add("inspector");
                 PublicAdditionalLibraries.Add("v8_base");
@@ -133,12 +161,13 @@ public class JsEnv : ModuleRules
                 PublicAdditionalLibraries.Add("v8_libplatform");
                 PublicAdditionalLibraries.Add("v8_libsampler");
             }
+#endif
         }
         else if (Target.Platform == UnrealTargetPlatform.Mac)
         {
             // PublicFrameworks.AddRange(new string[] { "WebKit",  "JavaScriptCore" });
             PublicFrameworks.AddRange(new string[] { "WebKit" });
-            string V8LibraryPath = Path.Combine(LibraryPath, "V8", "macOS");
+            string V8LibraryPath = Path.Combine(LibraryPath, "macOS");
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libbindings.a"));
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libencoding.a"));
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libinspector.a"));
@@ -159,7 +188,7 @@ public class JsEnv : ModuleRules
         else if (Target.Platform == UnrealTargetPlatform.IOS)
         {
             PublicFrameworks.AddRange(new string[] { "WebKit" });
-            string V8LibraryPath = Path.Combine(LibraryPath, "V8", "iOS", "arm64");
+            string V8LibraryPath = Path.Combine(LibraryPath, "iOS", "arm64");
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libbindings.a"));
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libencoding.a"));
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libinspector.a"));
@@ -176,34 +205,35 @@ public class JsEnv : ModuleRules
         }
         else if (Target.Platform == UnrealTargetPlatform.Linux)
         {
-            string V8LibraryPath = Path.Combine(LibraryPath, "V8", "Linux");
+            string V8LibraryPath = Path.Combine(LibraryPath, "Linux");
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libwee8.a"));
         }
 
-        string HeaderPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "Include"));
+        string V8HeaderPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "v8_for_ue424_or_below", "Inc"));
         // External headers
         if (Target.Platform == UnrealTargetPlatform.Android)
         {
             if (Target.Version.MajorVersion == 4 && Target.Version.MinorVersion >= 25)
             {
-                PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "v8", "8.4.371.19") });
+                PublicIncludePaths.AddRange(new string[] { Path.Combine(V8HeaderPath, "8.4.371.19") });
             }
             else if (Target.Version.MajorVersion == 4 && Target.Version.MinorVersion < 25)
             {
-                PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "v8", "7.4.288") });
+                PublicIncludePaths.AddRange(new string[] { Path.Combine(V8HeaderPath, "7.4.288") });
             }
         }
         //else if (Target.bBuildEditor && Target.Platform == UnrealTargetPlatform.Win64)
         //{
-        //    PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "v8", "8.4.371.19") });
+        //    PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "8.4.371.19") });
         //}
         else if (Target.Platform == UnrealTargetPlatform.Win64 ||
             Target.Platform == UnrealTargetPlatform.IOS ||
             Target.Platform == UnrealTargetPlatform.Mac ||
             Target.Platform == UnrealTargetPlatform.Linux)
         {
-            PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "v8", "7.7.299") });
+            PublicIncludePaths.AddRange(new string[] { Path.Combine(V8HeaderPath, "7.7.299") });
         }
+        string HeaderPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "Include"));
         PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "websocketpp") });
         PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "asio") });
     }
@@ -239,26 +269,12 @@ public class JsEnv : ModuleRules
 
     void AddRuntimeDependencies(string[] DllNames, string LibraryPath, bool Delay)
     {
-        string BinariesDir = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "Binaries", "Win64"));
         foreach (var DllName in DllNames)
         {
             if(Delay) PublicDelayLoadDLLs.Add(DllName);
             var DllPath = Path.Combine(LibraryPath, DllName);
-            var DestDllPath = Path.Combine(BinariesDir, DllName);
-            if (!Directory.Exists(BinariesDir))
-            {
-                Directory.CreateDirectory(BinariesDir);
-            }
-            try
-            {
-                System.IO.File.Delete(DestDllPath);
-            }
-            catch { }
-            if (!System.IO.File.Exists(DestDllPath) && System.IO.File.Exists(DllPath))
-            {
-                System.IO.File.Copy(DllPath, DestDllPath, false);
-            }
-            RuntimeDependencies.Add(DestDllPath);
+            var DestDllPath = Path.Combine("$(BinaryOutputDir)", DllName);
+            RuntimeDependencies.Add(DestDllPath, DllPath, StagedFileType.NonUFS);
         }
     }
 
@@ -297,7 +313,7 @@ public class JsEnv : ModuleRules
         string LibraryPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "v8", "Lib"));
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
-            if (!Target.bBuildEditor)
+            if (!Target.bBuildEditor || ForceStaticLibInEditor)
             {
                 string V8LibraryPath = Path.Combine(LibraryPath, "Win64MD");
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "wee8.lib"));
@@ -318,7 +334,7 @@ public class JsEnv : ModuleRules
         {
             //PublicFrameworks.AddRange(new string[] { "WebKit",  "JavaScriptCore" });
             //PublicFrameworks.AddRange(new string[] { "WebKit" });
-            if (!Target.bBuildEditor)
+            if (!Target.bBuildEditor || ForceStaticLibInEditor)
             {
                 string V8LibraryPath = Path.Combine(LibraryPath, "macOS");
                 PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libwee8.a"));
@@ -339,33 +355,88 @@ public class JsEnv : ModuleRules
             string V8LibraryPath = Path.Combine(LibraryPath, "Linux");
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libwee8.a"));
         }
+
+        if (ForceStaticLibInEditor)
+        {
+            PrivateDefinitions.Add("FORCE_USE_STATIC_V8_LIB");
+        }
     }
     
     void ThirdPartyNodejs(ReadOnlyTargetRules Target)
     {
-        PrivateDefinitions.Add("WITHOUT_INSPECTOR");//node already had one
         PrivateDefinitions.Add("WITH_NODEJS");
-        string HeaderPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "libnode"));
+        string WsHeaderPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "Include"));
+        PublicIncludePaths.AddRange(new string[] { Path.Combine(WsHeaderPath, "websocketpp") });
+        PublicIncludePaths.AddRange(new string[] { Path.Combine(WsHeaderPath, "asio") });
+
+        string NodeRoot = Node16 ? "nodejs_16" : "nodejs";
+
+        string HeaderPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", NodeRoot));
         PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "include") });
         PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "deps", "v8", "include") });
         PublicIncludePaths.AddRange(new string[] { Path.Combine(HeaderPath, "deps", "uv", "include") });
 
-        string LibraryPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", "libnode", "lib"));
+        string LibraryPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "ThirdParty", NodeRoot, "lib"));
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
             string V8LibraryPath = Path.Combine(LibraryPath, "Win64");
             PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnode.lib"));
 
-            AddRuntimeDependencies(new string[]
-            {
-                "libnode.dll",
-            }, V8LibraryPath, false);
+            RuntimeDependencies.Add("$(TargetOutputDir)/libnode.dll", Path.Combine(V8LibraryPath, "libnode.dll"));
+            AddRuntimeDependencies(new string[] { "libnode.dll" }, V8LibraryPath, false);
+        }
+        else if (Target.Platform == UnrealTargetPlatform.Android)
+        {
+            string V8LibraryPath = Path.Combine(LibraryPath, "Android", "armeabi-v7a");
+            RuntimeDependencies.Add("$(TargetOutputDir)/libnode.so", Path.Combine(V8LibraryPath, "libnode.so"));
+            AddRuntimeDependencies(new string[] { "libnode.so" }, V8LibraryPath, false);
+            V8LibraryPath = Path.Combine(LibraryPath, "Android", "arm64-v8a");
+            RuntimeDependencies.Add("$(TargetOutputDir)/libnode.so", Path.Combine(V8LibraryPath, "libnode.so"));
+            AddRuntimeDependencies(new string[] { "libnode.so" }, V8LibraryPath, false);
         }
         else if (Target.Platform == UnrealTargetPlatform.Mac)
         {
             string V8LibraryPath = Path.Combine(LibraryPath, "macOS");
-            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnode.dylib"));
+            if (Node16)
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnode.93.dylib"));
+            }
+            else
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnode.83.dylib"));
+            }
         }
+        else if (Target.Platform == UnrealTargetPlatform.IOS)
+        {
+            string V8LibraryPath = Path.Combine(LibraryPath, "iOS");
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libhistogram.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libuvwasi.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnode.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnode_stub.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_snapshot.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libplatform.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libzlib.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libllhttp.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libcares.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libuv.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnghttp2.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libbrotli.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libopenssl.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_base_without_compiler.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libbase.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_zlib.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_compiler.a"));
+            PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_initializers.a"));
+            if (Node16)
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libngtcp2.a"));
+                PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libnghttp3.a"));
+            }
+            else
+            {
+                PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libsampler.a"));
+            }
+        } 
         else if (Target.Platform == UnrealTargetPlatform.Linux) 
         {
             string V8LibraryPath = Path.Combine(LibraryPath, "Linux");

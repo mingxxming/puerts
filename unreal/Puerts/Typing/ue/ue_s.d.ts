@@ -1,7 +1,6 @@
 /// <reference path="puerts.d.ts" />
 declare module "ue" {
     import {$Ref, $Nullable} from "puerts"
-    
     class Guid {
         constructor();
         constructor(InA: number, InB: number, InC: number, InD: number);
@@ -19,7 +18,13 @@ declare module "ue" {
         static Parse(GuidString: string, OutGuid: $Ref<Guid>): boolean;
         static ParseExact(GuidString: string, Format: number, OutGuid: $Ref<Guid>): boolean;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Guid__: boolean;
         
     }
     class Box2D {
@@ -50,7 +55,13 @@ declare module "ue" {
         ShiftBy(Offset: Vector2D): Box2D;
         ToString(): string;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Box2D__: boolean;
         
     }
     class Color {
@@ -77,7 +88,13 @@ declare module "ue" {
         ToPackedRGBA(): number;
         ToPackedBGRA(): number;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Color__: boolean;
         
     }
     class LinearColor {
@@ -125,7 +142,13 @@ declare module "ue" {
         ToString(): string;
         InitFromString(InSourceString: string): boolean;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_LinearColor__: boolean;
         
     }
     class Quat {
@@ -194,7 +217,13 @@ declare module "ue" {
         static SquadFullPath(quat1: Quat, tang1: Quat, quat2: Quat, tang2: Quat, Alpha: number): Quat;
         static CalcTangents(PrevP: Quat, P: Quat, NextP: Quat, Tension: number, OutTan: $Ref<Quat>): void;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Quat__: boolean;
         
     }
     class Rotator {
@@ -245,7 +274,13 @@ declare module "ue" {
         static DecompressAxisFromShort(Angle: number): number;
         static MakeFromEuler(Euler: Vector): Rotator;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Rotator__: boolean;
         
     }
     class Transform {
@@ -337,7 +372,13 @@ declare module "ue" {
         CopyRotationPart(SrcBA: Transform): void;
         CopyTranslationAndScale3D(SrcBA: Transform): void;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Transform__: boolean;
         
     }
     class Vector {
@@ -454,7 +495,13 @@ declare module "ue" {
         static RadiansToDegrees(RadVector: Vector): Vector;
         static DegreesToRadians(DegVector: Vector): Vector;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Vector__: boolean;
         
     }
     class Vector2D {
@@ -512,7 +559,13 @@ declare module "ue" {
         ContainsNaN(): boolean;
         SphericalToUnitCartesian(): Vector;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Vector2D__: boolean;
         
     }
     class Vector4 {
@@ -559,7 +612,13 @@ declare module "ue" {
         FindBestAxisVectors3(Axis1: $Ref<Vector4>, Axis2: $Ref<Vector4>): void;
         DiagnosticCheckNaN(): void;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_Vector4__: boolean;
         
     }
     class IntPoint {
@@ -589,7 +648,13 @@ declare module "ue" {
         static DivideAndRoundDown(lhs: IntPoint, Divisor: number): IntPoint;
         static Num(): number;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_IntPoint__: boolean;
         
     }
     class IntVector {
@@ -617,75 +682,147 @@ declare module "ue" {
         static DivideAndRoundUp(lhs: IntVector, Divisor: number): IntVector;
         static Num(): number;
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_IntVector__: boolean;
         
     }
     class FMatrix {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_FMatrix__: boolean;
         
     }
     namespace FStructuredArchive {
     class FSlot {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_FSlot__: boolean;
         
     }
     }
     class FArchive {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_FArchive__: boolean;
         
     }
     class TSizedDefaultAllocator<T> {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_TSizedDefaultAllocatorT__: boolean;
         
     }
     class FPlane {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_FPlane__: boolean;
         
     }
     class FFloat16Color {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_FFloat16Color__: boolean;
         
     }
     class UPackageMap {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_UPackageMap__: boolean;
         
     }
     class FIntVector4 {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_FIntVector4__: boolean;
         
     }
     class VectorRegister {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_VectorRegister__: boolean;
         
     }
     class ScalarRegister {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_ScalarRegister__: boolean;
         
     }
     class FOutputDevice {
         constructor();
         
-        static StaticClass(): Class;
+        /**
+         * @deprecated use StaticStruct instead.
+         */
+        static StaticClass(): ScriptStruct;
+        static StaticStruct(): ScriptStruct;
+        
+        private __tid_FOutputDevice__: boolean;
         
     }
 

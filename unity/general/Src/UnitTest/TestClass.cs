@@ -11,6 +11,27 @@ using System.Collections.Generic;
 
 namespace Puerts.UnitTest
 {
+    public class Util
+    {
+        public static int InvokeJSFunctionIntInt(Func<int, int> jsFunc, int arg)
+        {
+            return jsFunc(arg);
+        }
+    }
+
+    public class ParentParent
+    {
+        public static void doSth()
+        {
+        }
+    }
+    public class GenericParent<T> : ParentParent
+    {
+    }
+    public class SonClass: GenericParent<int>
+    {
+    }
+
     public struct S
     {
         int age;
@@ -282,6 +303,11 @@ namespace Puerts.UnitTest
             y = new ISubA();
             y.cmpTarget = 100;
         }
+
+        public void OutString(out string str)
+        {
+            str = null;
+        }
     }
 
     public delegate string MyCallBack(string str);
@@ -499,18 +525,63 @@ namespace Puerts.UnitTest
             if (b && Callback != null) Callback();
             return true;
         }
-    }
     
-    public class TypedValue
+    }
+
+    public class ReadonlyStaticTest
     {
-        static object lastCallbackValue = null;
-        public static void Callback(object o)
+        public readonly static int ReadonlyStaticField = 1;
+        public static int StaticField = 3;
+    }
+    public class OptionalParametersClass
+    {
+        public int Test(int i = 0, int j = 1, int k = 2)
         {
-            lastCallbackValue = o;
+            return i * 100 + j * 10 + k;
         }
-        public static Type GetLastCallbackValueType() 
+
+        public int Test(string i, int j = 1, int k = 2)
         {
-            return lastCallbackValue == null ? null : lastCallbackValue.GetType();
+            return j * 10 + k;
+        }
+
+        public int Test2(string i)
+        {
+            return 0;
+        }
+
+        public int Test2(string i, int j)
+        {
+            return j;
+        }
+
+        public int Test2(string i, int j, params bool[] k)
+        {
+            return -1;
+        }
+
+        public int Test3(string i, int b)
+        {
+            return 0;
+        }
+
+        public int Test4(string i, int b, int c = 0, int d = 1)
+        {
+            return 0;
+        }
+
+        public int Test5(string i, int j, params bool[] k)
+        {
+            return -1;
+        }
+        public int Test6(int d, int i = 1, params string[] strs)
+        {
+            return i + d;
+        }
+        public string TestFilter(string str)
+        {
+            return str + " hello";
         }
     }
+
 }

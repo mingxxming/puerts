@@ -9,16 +9,26 @@ declare module "puerts" {
     import {Object, Class, $Delegate} from "ue"
     
     interface $Ref<T> {
-        value: T
+        __doNoAccess: T
+    }
+
+    interface $InRef<T> {
+        __doNoAccess: T
     }
     
     type $Nullable<T> = T | null;
+
+    type cstring = string | ArrayBuffer;
+
+    function toCString(str:string) : ArrayBuffer;
+
+    function toCPtrArray(...ab:ArrayBuffer[]) : ArrayBuffer;
     
-    function $ref<T>(x : T) : $Ref<T>;
+    function $ref<T>(x? : T) : $Ref<T>;
     
-    function $unref<T>(x: $Ref<T>) : T;
+    function $unref<T>(x: $Ref<T> | $InRef<T>) : T;
     
-    function $set<T>(x: $Ref<T>, val:T) : void;
+    function $set<T>(x: $Ref<T> | $InRef<T>, val:T) : void;
     
     const argv : {
         getByIndex(index: number): Object;
@@ -34,6 +44,18 @@ declare module "puerts" {
     function blueprint<T extends {
         new (...args:any[]): Object;
     }>(path:string): T;
+
+    namespace blueprint {
+        type MixinConfig = { objectTakeByNative?:boolean, inherit?:boolean, generatedClass?: Class, noMixinedWarning?:boolean};
+        function tojs<T extends typeof Object>(cls:Class): T;
+        function mixin<T extends typeof Object, R extends InstanceType<T>>(to:T, mixinMethods:new (...args: any) => R, config?: MixinConfig) : {
+            new (Outer?: Object, Name?: string, ObjectFlags?: number) : R;
+            StaticClass(): Class;
+        };
+        function unmixin<T extends typeof Object>(to:T): void
+        function load(cls: any): void
+        function unload(cls: any): void
+    }
     
     function on(eventType: string, listener: Function, prepend?: boolean) : void;
     
@@ -44,6 +66,8 @@ declare module "puerts" {
     function toManualReleaseDelegate<T extends (...args: any) => any>(func: T): $Delegate<T>;
     
     function releaseManualReleaseDelegate<T extends (...args: any) => any>(func: T): void;
+    
+    function toDelegate<T extends Object, K extends keyof T>(obj: T, key: T[K] extends (...args: any) => any ? K : never) : $Delegate<T[K] extends (...args: any) => any ? T[K] : never>;
 
     /*function getProperties(obj: Object, ...propNames:string[]): any;
     function getPropertiesAsync(obj: Object, ...propNames:string[]): Promise<any>;
@@ -59,5 +83,3 @@ declare module "puerts" {
 
     function $async<T>(x: T) : AsyncObject<T>;*/
 }
-
-declare function require(name: string): any;

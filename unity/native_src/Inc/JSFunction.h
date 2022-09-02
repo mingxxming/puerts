@@ -73,7 +73,7 @@ public:
 
     ~JSFunction();
 
-    bool Invoke(bool HasResult);
+    bool Invoke(int argumentsLength, bool HasResult);
 
     std::vector<FValue> Arguments;
 
@@ -81,10 +81,10 @@ public:
 
     std::string LastExceptionInfo;
 
+    v8::UniquePersistent<v8::Value> LastException;
+
     FResultInfo ResultInfo;
 
     int32_t Index;
-
-    std::vector<v8::Local<v8::Value>> V8Arguments;
 };
 }

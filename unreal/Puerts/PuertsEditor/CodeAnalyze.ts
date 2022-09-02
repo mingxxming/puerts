@@ -1298,7 +1298,7 @@ function getCustomSystem(): ts.System {
         if (res) {
             return $unref(data);
         } else {
-            console.warn("readFile: read file fail! path=" + path);
+            console.warn("readFile: read file fail! path=" + path + ", stack:" + new Error().stack);
             return undefined;
         }
     }
@@ -1378,9 +1378,9 @@ function logErrors(allDiagnostics: readonly ts.Diagnostic[]) {
         let { line, character } = diagnostic.file.getLineAndCharacterOfPosition(
           diagnostic.start!
         );
-        console.warn(`  Error ${diagnostic.file.fileName} (${line + 1},${character +1}): ${message}`);
+        console.error(`  Error ${diagnostic.file.fileName} (${line + 1},${character +1}): ${message}`);
       } else {
-        console.warn(`  Error: ${message}`);
+        console.error(`  Error: ${message}`);
       }
     });
 }
@@ -1523,17 +1523,21 @@ function readAndParseConfigFile(configFilePath: string) : ts.ParsedCommandLine {
 function watch(configFilePath:string) {
     let {fileNames, options} = readAndParseConfigFile(configFilePath);
 
-    console.log("start watch..", JSON.stringify({fileNames:fileNames, options: options}))
-    const fileVersions: ts.MapLike<{ version: string }> = {};
+    console.log("start watch..", JSON.stringify({fileNames:fileNames, options: options}));
+    const versionsFilePath = getDirectoryPath(configFilePath) + "/ts_file_versions_info.json";
+    const fileVersions: ts.MapLike<{ version: string, processed: boolean }> = {};
   
-    // initialize the list of files
+    let beginTime = new Date().getTime();
     fileNames.forEach(fileName => {
-      fileVersions[fileName] = { version: "" };
+      fileVersions[fileName] = { version: UE.FileSystemOperation.FileMD5Hash(fileName), processed: false};
     });
+    console.log ("calc md5 using " + (new Date().getTime() - beginTime) + "ms");
 
     function getDefaultLibLocation(): string {
         return getDirectoryPath(normalizePath(customSystem.getExecutingFilePath()));
     }
+
+    const scriptSnapshotsCache = new Map<string, {version: string, scriptSnapshot:ts.IScriptSnapshot}>();
   
     // Create the language service host to allow the LS to communicate with the host
     const servicesHost: ts.LanguageServiceHost = {
@@ -1543,18 +1547,46 @@ function watch(configFilePath:string) {
               return fileVersions[fileName] && fileVersions[fileName].version.toString();
           } else {
               let md5 = UE.FileSystemOperation.FileMD5Hash(fileName);
-              fileVersions[fileName] = { version: md5 };
+              fileVersions[fileName] = { version: md5, processed: false};
               return md5;
           }
       },
       getScriptSnapshot: fileName => {
         if (!customSystem.fileExists(fileName)) {
-            console.log("getScriptSnapshot: file not existed! path=" + fileName);
+            console.error("getScriptSnapshot: file not existed! path=" + fileName);
             return undefined;
+        }
+
+        if (!(fileName in fileVersions)) {
+            fileVersions[fileName] = {version: UE.FileSystemOperation.FileMD5Hash(fileName), processed: false};
+        }
+
+        if (!scriptSnapshotsCache.has(fileName)) {
+            const sourceFile = customSystem.readFile(fileName);
+            if (!sourceFile) {
+                console.error("getScriptSnapshot: read file failed! path=" + fileName);
+                return undefined;
+            }
+            scriptSnapshotsCache.set(fileName, {
+                version:fileVersions[fileName].version,
+                scriptSnapshot: ts.ScriptSnapshot.fromString(sourceFile)
+            });
+        }
+
+        let scriptSnapshotsInfo = scriptSnapshotsCache.get(fileName);
+
+        if (scriptSnapshotsInfo.version != fileVersions[fileName].version) {
+            const sourceFile = customSystem.readFile(fileName);
+            if (!sourceFile) {
+                console.error("getScriptSnapshot: read file failed! path=" + fileName);
+                return undefined;
+            }
+            scriptSnapshotsInfo.version = fileVersions[fileName].version;
+            scriptSnapshotsInfo.scriptSnapshot = ts.ScriptSnapshot.fromString(sourceFile);
         }
         //console.log("getScriptSnapshot:"+ fileName + ",in:" + new Error().stack)
   
-        return ts.ScriptSnapshot.fromString(customSystem.readFile(fileName));
+        return scriptSnapshotsInfo.scriptSnapshot;
       },
       getCurrentDirectory: customSystem.getCurrentDirectory,
       getCompilationSettings: () => options,
@@ -1580,19 +1612,43 @@ function watch(configFilePath:string) {
         }
     }
 
-    let beginTime = new Date().getTime();
+    beginTime = new Date().getTime();
     let program = getProgramFromService();
     console.log ("full compile using " + (new Date().getTime() - beginTime) + "ms");
     let diagnostics =  ts.getPreEmitDiagnostics(program);
+    let restoredFileVersions: ts.MapLike<{ version: string, processed: boolean }> = {};
+    var changed = false;
+    if (customSystem.fileExists(versionsFilePath)) {
+        try {
+            restoredFileVersions = JSON.parse(customSystem.readFile(versionsFilePath));
+            console.log("restore versions from ", versionsFilePath);
+        } catch {}
+    }
     if (diagnostics.length > 0) {
+        fileNames.forEach(fileName => {
+            fileVersions[fileName] = restoredFileVersions[fileName] || fileVersions[fileName];
+        });
         logErrors(diagnostics);
     } else {
         fileNames.forEach(fileName => {
-            onSourceFileAddOrChange(fileName, false, program, true, false);
+            if (!(fileName in restoredFileVersions) || restoredFileVersions[fileName].version != fileVersions[fileName].version || !restoredFileVersions[fileName].processed) {
+                onSourceFileAddOrChange(fileName, false, program, true, false);
+                changed = true;
+            } else {
+                fileVersions[fileName].processed = true;
+            }
         });
         fileNames.forEach(fileName => {
-            onSourceFileAddOrChange(fileName, false, program, false);
+            if (!(fileName in restoredFileVersions) || restoredFileVersions[fileName].version != fileVersions[fileName].version || !restoredFileVersions[fileName].processed) {
+                onSourceFileAddOrChange(fileName, false, program, false);
+                changed = true;
+            } else {
+                fileVersions[fileName].processed = true;
+            }
         });
+        if (changed) {
+            UE.FileSystemOperation.WriteFile(versionsFilePath, JSON.stringify(fileVersions, null, 4));
+        }
     }
 
     var dirWatcher = new UE.PEDirectoryWatcher();
@@ -1600,8 +1656,10 @@ function watch(configFilePath:string) {
 
     dirWatcher.OnChanged.Add((added, modified, removed) => {
         setTimeout(() =>{
+            var changed = false;
             if (added.Num() > 0) {
                 onFileAdded();
+                changed = true;
             }
             if (modified.Num() > 0) {
                 for(var i = 0; i < modified.Num(); i++) {
@@ -1614,9 +1672,14 @@ function watch(configFilePath:string) {
                             console.log(`${fileName} md5 from ${fileVersions[fileName].version} to ${md5}`);
                             fileVersions[fileName].version = md5;
                             onSourceFileAddOrChange(fileName, true);
+                            changed = true;
                         }
                     }
                 }
+            }
+            if (changed) {
+                console.log("versions saved to " + versionsFilePath);
+                UE.FileSystemOperation.WriteFile(versionsFilePath, JSON.stringify(fileVersions, null, 4));
             }
         }, 100);//延时100毫秒，防止因为读冲突而文件读取失败
     });
@@ -1630,7 +1693,7 @@ function watch(configFilePath:string) {
             if (!(fileName in fileVersions)) {
                 console.log(`new file: ${fileName} ...`)
                 newFiles.push(fileName);
-                fileVersions[fileName] = { version: "" };
+                fileVersions[fileName] = { version: UE.FileSystemOperation.FileMD5Hash(fileName), processed: false };
             }
         });
 
@@ -1704,7 +1767,21 @@ function watch(configFilePath:string) {
                                 
                                 let baseTypes = type.getBaseTypes();
                                 if (!baseTypes || baseTypes.length != 1) return;
-                                let baseTypeUClass = getUClassOfType(baseTypes[0]);
+                                let structOfType = getUClassOfType(baseTypes[0]);
+                                let baseTypeUClass:UE.Class = undefined;
+
+                                if(!structOfType){
+                                    return
+                                }
+                                
+                                if (structOfType.GetClass().IsChildOf(UE.Class.StaticClass())) {
+                                    baseTypeUClass = structOfType as UE.Class;
+                                }
+                                else {
+                                    console.warn("do not support UStruct:" + checker.typeToString(type));
+                                    return;
+                                }
+
                                 if (baseTypeUClass) {
                                     if (isSubclassOf(type, "Subsystem")) {
                                         console.warn("do not support Subsystem " + checker.typeToString(type));
@@ -1723,6 +1800,7 @@ function watch(configFilePath:string) {
                         }
                     }
                 }
+                fileVersions[sourceFilePath].processed = true;
             }
 
             function typeNameToString(node: ts.EntityName): string {
@@ -1745,14 +1823,20 @@ function watch(configFilePath:string) {
 
             function getUClassOfType(type: ts.Type) : UE.Object {
                 if (!type) return undefined;
-                if (getModule(type) == 'ue') {
-                    try {
-                        let jsCls = (UE as any)[type.symbol.getName()]; 
-                        if (typeof jsCls.StaticClass == 'function') {
-                            return jsCls.StaticClass();
-                        } 
-                    } catch (e) {
-                        console.error(`load ue type [${type.symbol.getName()}], throw: ${e}`);
+                let moduleNames = getModuleNames(type);
+                if (moduleNames.length > 0 && moduleNames[0] == 'ue') {
+                    if (moduleNames.length == 1) {
+                        try {
+                            let jsCls = (UE as any)[type.symbol.getName()]; 
+                            if (typeof jsCls.StaticClass == 'function') {
+                                return jsCls.StaticClass();
+                            } 
+                        } catch (e) {
+                            console.error(`load ue type [${type.symbol.getName()}], throw: ${e}`);
+                        }
+                    } else if (moduleNames.length == 2) {
+                        let classPath = '/' + moduleNames[1] + '.' + type.symbol.getName();
+                        return UE.Field.Load(classPath);
                     }
                 } else if ( type.symbol &&  type.symbol.valueDeclaration) {
                     //eturn undefined;
@@ -1779,7 +1863,7 @@ function watch(configFilePath:string) {
                         let moduleFileName = sourceFileName.substr(options.outDir.length + 1);
                         let modulePath = getDirectoryPath(moduleFileName);
                         let bp = new UE.PEBlueprintAsset();
-                        bp.LoadOrCreate(type.getSymbol().getName(), modulePath, baseTypeUClass, 0, 0);
+                        bp.LoadOrCreate(type.getSymbol().getName(), modulePath, baseTypeUClass as UE.Class, 0, 0);
                         bp.Save();
                         return bp.GeneratedClass;
                     }
@@ -1800,13 +1884,13 @@ function watch(configFilePath:string) {
             function tsTypeToPinType(type: ts.Type, node: ts.Node) : { pinType: UE.PEGraphPinType, pinValueType?: UE.PEGraphTerminalType} | undefined {
                 if (!type) return undefined;
                 try {
-                    let typeNode = checker.typeToTypeNode(type);
+                    let typeNode = checker.typeToTypeNode(type, undefined, undefined);
                     //console.log(checker.typeToString(type), tds)
                     if (ts.isTypeReferenceNode(typeNode) && type.symbol) {
                         let typeName = type.symbol.getName();
                         if (typeName == 'BigInt') {
                             let category:PinCategory = "int64";
-                            let pinType = new UE.PEGraphPinType(category, undefined, UE.EPinContainerType.None, false);
+                            let pinType = new UE.PEGraphPinType(category, undefined, UE.EPinContainerType.None, false, false);
                             return {pinType: pinType};
                         }
                         if (!typeNode.typeArguments || typeNode.typeArguments.length == 0) { 
@@ -1815,13 +1899,13 @@ function watch(configFilePath:string) {
                             if (!uclass) {
                                 let uenum = UE.Enum.Find(type.symbol.getName());
                                 if (uenum) {
-                                    return {pinType: new UE.PEGraphPinType("byte", uenum, UE.EPinContainerType.None, false)};
+                                    return {pinType: new UE.PEGraphPinType("byte", uenum, UE.EPinContainerType.None, false, false)};
                                 }
                                 console.warn("can not find type of " + typeName);
                                 return undefined;
                             }
                             
-                            let pinType = new UE.PEGraphPinType(category, uclass, UE.EPinContainerType.None, false);
+                            let pinType = new UE.PEGraphPinType(category, uclass, UE.EPinContainerType.None, false, false);
                             return {pinType: pinType};
                         } else { //TArray, TSet, TMap
                             let typeRef = type as ts.TypeReference;
@@ -1846,7 +1930,7 @@ function watch(configFilePath:string) {
 
                             let result = tsTypeToPinType(typeArguments[0], children[1]); 
                             
-                            if (!result || result.pinType.PinContainerType != UE.EPinContainerType.None) {
+                            if (!result || result.pinType.PinContainerType != UE.EPinContainerType.None && typeName != '$Ref' && typeName != '$InRef') {
                                 console.warn("can not find pin type of typeArguments[0] " + typeName);
                                 return undefined;
                             }
@@ -1872,6 +1956,10 @@ function watch(configFilePath:string) {
                                 return result;
                             } else if (typeName ==  '$Ref') {
                                 result.pinType.bIsReference = true;
+                                return result;
+                            } else if (typeName ==  '$InRef') {
+                                result.pinType.bIsReference = true;
+                                result.pinType.bIn = true;
                                 return result;
                             } else if (typeName == 'TMap') {
                                 let valuePinType = tsTypeToPinType(typeArguments[1], undefined);
@@ -1911,7 +1999,7 @@ function watch(configFilePath:string) {
                                 console.warn("not support kind: " + typeNode.kind);
                                 return undefined;
                         }
-                        let pinType = new UE.PEGraphPinType(category, undefined, UE.EPinContainerType.None, false);
+                        let pinType = new UE.PEGraphPinType(category, undefined, UE.EPinContainerType.None, false, false);
                         return {pinType: pinType};
                     }
                 } catch (e) {
@@ -3846,10 +3934,33 @@ function watch(configFilePath:string) {
                 bp.Save();
             }
 
-            function getModule(type: ts.Type) {
+            function getModuleNames(type: ts.Type) : string[] {
+                let ret:string[] = []
                 if(type.symbol && type.symbol.valueDeclaration && type.symbol.valueDeclaration.parent && ts.isModuleBlock(type.symbol.valueDeclaration.parent)) {
-                    return type.symbol.valueDeclaration.parent.parent.name.text;
+                    let moduleBody: ts.ModuleBody = type.symbol.valueDeclaration.parent;
+
+                    while(moduleBody) {
+                        let moduleDeclaration:ts.ModuleDeclaration = moduleBody.parent;
+                        let nameOfModule:string = undefined;
+                        while(moduleDeclaration) {
+                            let ns = moduleDeclaration.name.text;
+                            ns = ns.startsWith("$") ? ns.substring(1) : ns;
+                            nameOfModule = nameOfModule ? (ns + '/' + nameOfModule) : ns;
+                            if (ts.isModuleDeclaration(moduleDeclaration.parent)) {
+                                moduleDeclaration = moduleDeclaration.parent;
+                            } else {
+                                break;
+                            }
+                        }
+                        ret.push(nameOfModule);
+                        if (moduleDeclaration && ts.isModuleBlock(moduleDeclaration.parent)) {
+                            moduleBody = moduleDeclaration.parent;
+                        } else {
+                            break;
+                        }
+                    }
                 } 
+                return ret.reverse();
             }
         }
     }

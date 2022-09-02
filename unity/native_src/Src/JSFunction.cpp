@@ -36,6 +36,9 @@ namespace puerts
     JSFunction::~JSFunction()
     {
         v8::Isolate* Isolate = ResultInfo.Isolate;
+#ifdef THREAD_SAFE
+        v8::Locker Locker(Isolate);
+#endif
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);
         v8::Local<v8::Context> Context = ResultInfo.Context.Get(Isolate);
@@ -81,32 +84,38 @@ namespace puerts
         }
     }
 
-    /*void JSFunction::SetResult(v8::MaybeLocal<v8::Value> maybeValue)
-    {
-
-    }*/
-
-    bool JSFunction::Invoke(bool HasResult)
+    bool JSFunction::Invoke(int argumentsLength, bool HasResult)
     {
         printf("try invoke c++ ---------------------------\n");
         v8::Isolate* Isolate = ResultInfo.Isolate;
+#ifdef THREAD_SAFE
+        v8::Locker Locker(Isolate);
+#endif
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);
         v8::Local<v8::Context> Context = ResultInfo.Context.Get(Isolate);
         v8::Context::Scope ContextScope(Context);
 
-        V8Arguments.clear();
-        for (int i = 0; i < Arguments.size(); ++i)
-        {
-            V8Arguments.push_back(ToV8(Isolate, Context, Arguments[i]));
-        }
-        v8::TryCatch TryCatch(Isolate);
-        auto maybeValue = GFunction.Get(Isolate)->Call(Context, Context->Global(), static_cast<int>(V8Arguments.size()), V8Arguments.data());
         Arguments.clear();
+        JSEngine* JsEngine = FV8Utils::IsolateData<JSEngine>(Isolate);
+        if (argumentsLength > 0)
+        {
+            JsEngine->GetJSArgumentsCallback(Isolate, JsEngine->Idx, this);
+        }
+        
+        v8::TryCatch TryCatch(Isolate);
+        v8::Local<v8::Value> *args = (v8::Local<v8::Value> *)alloca(sizeof(v8::Local<v8::Value>) * Arguments.size());
+        for (int i = 0; i < Arguments.size(); i++)
+        {
+            args[i] = ToV8(Isolate, Context, Arguments[i]);
+        }
+        auto maybeValue = GFunction.Get(Isolate)->Call(Context, Context->Global(), static_cast<int>(Arguments.size()), args);
         
         if (TryCatch.HasCaught())
         {
-            LastExceptionInfo = FV8Utils::ExceptionToString(Isolate, TryCatch);
+            v8::Local<v8::Value> Exception = TryCatch.Exception();
+            LastException.Reset(Isolate, Exception);
+            LastExceptionInfo = FV8Utils::ExceptionToString(Isolate, Exception);
             return false;
         }
         else
