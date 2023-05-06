@@ -37408,6 +37408,67 @@ static void b_vou4(void* target, void* p0, uint32_t p1, void* method) {
     }
 }
 
+static void b_vp(void* target, void* p0, void* method) {
+    // PLog(LogLevel::Log, "Running b_vp");
+
+    auto TIp0 = GetParameterType(method, 0);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[1]{
+        v8::Undefined(isolate)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 1, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
+static void b_vpi4(void* target, void* p0, int32_t p1, void* method) {
+    // PLog(LogLevel::Log, "Running b_vpi4");
+
+    auto TIp0 = GetParameterType(method, 0);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[2]{
+        v8::Undefined(isolate),
+        converter::Converter<int32_t>::toScript(context, p1)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 2, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
 static void b_vpi4ppi8(void* target, void* p0, int32_t p1, void* p2, void* p3, int64_t p4, void* method) {
     // PLog(LogLevel::Log, "Running b_vpi4ppi8");
 
@@ -37607,6 +37668,40 @@ static void b_vpr4r4r4r4r4r4(void* target, void* p0, float p1, float p2, float p
         converter::Converter<float>::toScript(context, p6)
     };
     auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 7, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
+static void b_vpu2i4p(void* target, void* p0, uint16_t p1, int32_t p2, void* p3, void* method) {
+    // PLog(LogLevel::Log, "Running b_vpu2i4p");
+
+    auto TIp0 = GetParameterType(method, 0);
+    auto TIp3 = GetParameterType(method, 3);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[4]{
+        v8::Undefined(isolate),
+        converter::Converter<uint16_t>::toScript(context, p1),
+        converter::Converter<int32_t>::toScript(context, p2),
+        v8::Undefined(isolate)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 4, Argv);
     
     if (TryCatch.HasCaught())
     {
@@ -39976,12 +40071,15 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"voss_i4i4i4i4_b", (MethodPointer)b_voss_i4i4i4i4_b},
     {"vou1s", (MethodPointer)b_vou1s},
     {"vou4", (MethodPointer)b_vou4},
+    {"vp", (MethodPointer)b_vp},
+    {"vpi4", (MethodPointer)b_vpi4},
     {"vpi4ppi8", (MethodPointer)b_vpi4ppi8},
     {"vpi4u4u4", (MethodPointer)b_vpi4u4u4},
     {"vpi8", (MethodPointer)b_vpi8},
     {"vpppi4", (MethodPointer)b_vpppi4},
     {"vpppi4i8", (MethodPointer)b_vpppi4i8},
     {"vpr4r4r4r4r4r4", (MethodPointer)b_vpr4r4r4r4r4r4},
+    {"vpu2i4p", (MethodPointer)b_vpu2i4p},
     {"vpu4", (MethodPointer)b_vpu4},
     {"vpu4u4", (MethodPointer)b_vpu4u4},
     {"vpu4u4u4i4", (MethodPointer)b_vpu4u4u4i4},
