@@ -61716,6 +61716,49 @@ static bool b_bO(void* target, void* p0, void* method) {
         
 }
 
+static bool b_bOo(void* target, void* p0, void* p1, void* method) {
+    // PLog(LogLevel::Log, "Running b_bOo");
+
+    auto TIp0 = GetParameterType(method, 0);
+    auto TIp1 = GetParameterType(method, 1);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+        return {};
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[2]{
+        CSAnyToJsValue(isolate, context, p0),
+        CSRefToJsValue(isolate, context, p1)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 2, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+        return {};
+    }
+    if (MaybeRet.IsEmpty())
+    {
+        return {};
+    }
+    
+    // JSValToCSVal P any
+    bool ret = converter::Converter<bool>::toCpp(context, MaybeRet.ToLocalChecked());
+    return ret;
+        
+}
+
 static bool b_bOooi4(void* target, void* p0, void* p1, void* p2, int32_t p3, void* method) {
     // PLog(LogLevel::Log, "Running b_bOooi4");
 
@@ -61952,6 +61995,94 @@ static bool b_bi4i4i4po(void* target, int32_t p0, int32_t p1, int32_t p2, void* 
         CSRefToJsValue(isolate, context, p4)
     };
     auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 5, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+        return {};
+    }
+    if (MaybeRet.IsEmpty())
+    {
+        return {};
+    }
+    
+    // JSValToCSVal P any
+    bool ret = converter::Converter<bool>::toCpp(context, MaybeRet.ToLocalChecked());
+    return ret;
+        
+}
+
+static bool b_bi4o(void* target, int32_t p0, void* p1, void* method) {
+    // PLog(LogLevel::Log, "Running b_bi4o");
+
+    auto TIp1 = GetParameterType(method, 1);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+        return {};
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[2]{
+        converter::Converter<int32_t>::toScript(context, p0),
+        CSRefToJsValue(isolate, context, p1)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 2, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+        return {};
+    }
+    if (MaybeRet.IsEmpty())
+    {
+        return {};
+    }
+    
+    // JSValToCSVal P any
+    bool ret = converter::Converter<bool>::toCpp(context, MaybeRet.ToLocalChecked());
+    return ret;
+        
+}
+
+static bool b_bi4sso(void* target, int32_t p0, void* p1, void* p2, void* p3, void* method) {
+    // PLog(LogLevel::Log, "Running b_bi4sso");
+
+    auto TIp1 = GetParameterType(method, 1);
+    auto TIp2 = GetParameterType(method, 2);
+    auto TIp3 = GetParameterType(method, 3);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+        return {};
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[4]{
+        converter::Converter<int32_t>::toScript(context, p0),
+        CSAnyToJsValue(isolate, context, p1),
+        CSAnyToJsValue(isolate, context, p2),
+        CSRefToJsValue(isolate, context, p3)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 4, Argv);
     
     if (TryCatch.HasCaught())
     {
@@ -64037,6 +64168,54 @@ static void* b_oOo(void* target, void* p0, void* p1, void* method) {
         CSRefToJsValue(isolate, context, p1)
     };
     auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 2, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+        return {};
+    }
+    if (MaybeRet.IsEmpty())
+    {
+        return {};
+    }
+    
+    // JSValToCSVal o/O
+    void* ret = JsValueToCSRef(context, MaybeRet.ToLocalChecked(), TIret);
+    return ret;
+        
+}
+
+static void* b_oOooO(void* target, void* p0, void* p1, void* p2, void* p3, void* method) {
+    // PLog(LogLevel::Log, "Running b_oOooO");
+
+    auto TIret = GetReturnType(method);
+    auto TIp0 = GetParameterType(method, 0);
+    auto TIp1 = GetParameterType(method, 1);
+    auto TIp2 = GetParameterType(method, 2);
+    auto TIp3 = GetParameterType(method, 3);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+        return {};
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[4]{
+        CSAnyToJsValue(isolate, context, p0),
+        CSRefToJsValue(isolate, context, p1),
+        CSRefToJsValue(isolate, context, p2),
+        CSAnyToJsValue(isolate, context, p3)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 4, Argv);
     
     if (TryCatch.HasCaught())
     {
@@ -66227,6 +66406,48 @@ static void* b_os_i4i4_(void* target, struct s_i4i4_ p0, void* method) {
         
 }
 
+static void* b_os_o_(void* target, struct s_o_ p0, void* method) {
+    // PLog(LogLevel::Log, "Running b_os_o_");
+
+    auto TIret = GetReturnType(method);
+    auto TIp0 = GetParameterType(method, 0);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+        return {};
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[1]{
+        CopyValueType(isolate, context, TIp0, &p0, sizeof(p0))
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 1, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+        return {};
+    }
+    if (MaybeRet.IsEmpty())
+    {
+        return {};
+    }
+    
+    // JSValToCSVal o/O
+    void* ret = JsValueToCSRef(context, MaybeRet.ToLocalChecked(), TIret);
+    return ret;
+        
+}
+
 static void* b_os_r4r4r4r4_o(void* target, struct s_r4r4r4r4_ p0, void* p1, void* method) {
     // PLog(LogLevel::Log, "Running b_os_r4r4r4r4_o");
 
@@ -68061,6 +68282,53 @@ static void* b_soo(void* target, void* p0, void* p1, void* method) {
         
 }
 
+static void* b_sooO(void* target, void* p0, void* p1, void* p2, void* method) {
+    // PLog(LogLevel::Log, "Running b_sooO");
+
+    auto TIret = GetReturnType(method);
+    auto TIp0 = GetParameterType(method, 0);
+    auto TIp1 = GetParameterType(method, 1);
+    auto TIp2 = GetParameterType(method, 2);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+        return {};
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[3]{
+        CSRefToJsValue(isolate, context, p0),
+        CSRefToJsValue(isolate, context, p1),
+        CSAnyToJsValue(isolate, context, p2)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 3, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+        return {};
+    }
+    if (MaybeRet.IsEmpty())
+    {
+        return {};
+    }
+    
+    // JSValToCSVal s
+    v8::String::Utf8Value tret(isolate, MaybeRet.ToLocalChecked());
+    void* ret = CStringToCSharpString(*tret);
+    return ret;
+        
+}
+
 static void* b_sos(void* target, void* p0, void* p1, void* method) {
     // PLog(LogLevel::Log, "Running b_sos");
 
@@ -69210,6 +69478,39 @@ static void b_vi4ooo(void* target, int32_t p0, void* p1, void* p2, void* p3, voi
     }
 }
 
+static void b_vi4os_r4r4r4_(void* target, int32_t p0, void* p1, struct s_r4r4r4_ p2, void* method) {
+    // PLog(LogLevel::Log, "Running b_vi4os_r4r4r4_");
+
+    auto TIp1 = GetParameterType(method, 1);
+    auto TIp2 = GetParameterType(method, 2);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[3]{
+        converter::Converter<int32_t>::toScript(context, p0),
+        CSRefToJsValue(isolate, context, p1),
+        CopyValueType(isolate, context, TIp2, &p2, sizeof(p2))
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 3, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
 static void b_vi4popO(void* target, int32_t p0, void* p1, void* p2, void* p3, void* p4, void* method) {
     // PLog(LogLevel::Log, "Running b_vi4popO");
 
@@ -69586,6 +69887,39 @@ static void b_voO(void* target, void* p0, void* p1, void* method) {
         CSAnyToJsValue(isolate, context, p1)
     };
     auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 2, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
+static void b_voOPi4(void* target, void* p0, void* p1, int32_t* p2, void* method) {
+    // PLog(LogLevel::Log, "Running b_voOPi4");
+
+    auto TIp0 = GetParameterType(method, 0);
+    auto TIp1 = GetParameterType(method, 1);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[3]{
+        CSRefToJsValue(isolate, context, p0),
+        CSAnyToJsValue(isolate, context, p1),
+        v8::Undefined(isolate)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 3, Argv);
     
     if (TryCatch.HasCaught())
     {
@@ -71794,6 +72128,39 @@ static void b_vs(void* target, void* p0, void* method) {
     }
 }
 
+static void b_vsOi4(void* target, void* p0, void* p1, int32_t p2, void* method) {
+    // PLog(LogLevel::Log, "Running b_vsOi4");
+
+    auto TIp0 = GetParameterType(method, 0);
+    auto TIp1 = GetParameterType(method, 1);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[3]{
+        CSAnyToJsValue(isolate, context, p0),
+        CSAnyToJsValue(isolate, context, p1),
+        converter::Converter<int32_t>::toScript(context, p2)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 3, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
 static void b_vs_Oi4_(void* target, struct s_Oi4_ p0, void* method) {
     // PLog(LogLevel::Log, "Running b_vs_Oi4_");
 
@@ -72410,6 +72777,36 @@ static void b_vs_i4u1u1_(void* target, struct s_i4u1u1_ p0, void* method) {
 
 static void b_vs_i8i8_(void* target, struct s_i8i8_ p0, void* method) {
     // PLog(LogLevel::Log, "Running b_vs_i8i8_");
+
+    auto TIp0 = GetParameterType(method, 0);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[1]{
+        CopyValueType(isolate, context, TIp0, &p0, sizeof(p0))
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 1, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
+static void b_vs_o_(void* target, struct s_o_ p0, void* method) {
+    // PLog(LogLevel::Log, "Running b_vs_o_");
 
     auto TIp0 = GetParameterType(method, 0);
 
@@ -73272,6 +73669,45 @@ static void b_vsi4(void* target, void* p0, int32_t p1, void* method) {
     }
 }
 
+static void b_vsi4POPoPs_u8_Ps_i8_(void* target, void* p0, int32_t p1, void** p2, void** p3, struct s_u8_* p4, struct s_i8_* p5, void* method) {
+    // PLog(LogLevel::Log, "Running b_vsi4POPoPs_u8_Ps_i8_");
+
+    auto TIp0 = GetParameterType(method, 0);
+    auto TIp2 = GetParameterType(method, 2);
+    auto TIp3 = GetParameterType(method, 3);
+    auto TIp4 = GetParameterType(method, 4);
+    auto TIp5 = GetParameterType(method, 5);
+
+    PersistentObjectInfo* delegateInfo = GetObjectData(target, PersistentObjectInfo);
+    if (delegateInfo->JsEnvLifeCycleTracker.expired())
+    {
+        ThrowInvalidOperationException("JsEnv had been destroy");
+    }
+    v8::Isolate* isolate = delegateInfo->EnvInfo->Isolate;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope HandleScope(isolate);
+    auto context = delegateInfo->EnvInfo->Context.Get(isolate);
+    v8::Context::Scope ContextScope(context);
+
+    v8::TryCatch TryCatch(isolate);
+    auto Function = delegateInfo->JsObject.Get(isolate).As<v8::Function>();
+    v8::Local<v8::Value> Argv[6]{
+        CSAnyToJsValue(isolate, context, p0),
+        converter::Converter<int32_t>::toScript(context, p1),
+        v8::Undefined(isolate),
+        v8::Undefined(isolate),
+        v8::Undefined(isolate),
+        v8::Undefined(isolate)
+    };
+    auto MaybeRet = Function->Call(context, v8::Undefined(isolate), 6, Argv);
+    
+    if (TryCatch.HasCaught())
+    {
+        auto msg = DataTransfer::ExceptionToString(isolate, TryCatch.Exception());
+        ThrowInvalidOperationException(msg.c_str());
+    }
+}
+
 static void b_vsi8(void* target, void* p0, int64_t p1, void* method) {
     // PLog(LogLevel::Log, "Running b_vsi8");
 
@@ -73704,12 +74140,15 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"OssoPi4", (MethodPointer)b_OssoPi4},
     {"b", (MethodPointer)b_b},
     {"bO", (MethodPointer)b_bO},
+    {"bOo", (MethodPointer)b_bOo},
     {"bOooi4", (MethodPointer)b_bOooi4},
     {"bPs", (MethodPointer)b_bPs},
     {"bPs_Ps_u4u4i8i8i8i8i8i8i4u4u4c_pi4pi4pi4_", (MethodPointer)b_bPs_Ps_u4u4i8i8i8i8i8i8i4u4u4c_pi4pi4pi4_},
     {"bb", (MethodPointer)b_bb},
     {"bi4", (MethodPointer)b_bi4},
     {"bi4i4i4po", (MethodPointer)b_bi4i4i4po},
+    {"bi4o", (MethodPointer)b_bi4o},
+    {"bi4sso", (MethodPointer)b_bi4sso},
     {"bo", (MethodPointer)b_bo},
     {"boO", (MethodPointer)b_boO},
     {"boPi4", (MethodPointer)b_boPi4},
@@ -73758,6 +74197,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"o", (MethodPointer)b_o},
     {"oO", (MethodPointer)b_oO},
     {"oOo", (MethodPointer)b_oOo},
+    {"oOooO", (MethodPointer)b_oOooO},
     {"oOs", (MethodPointer)b_oOs},
     {"oOsooo", (MethodPointer)b_oOsooo},
     {"oPs_Ps_u4u4i8i8i8i8i8i8i4u4u4c_pi4pi4pi4_", (MethodPointer)b_oPs_Ps_u4u4i8i8i8i8i8i8i4u4u4c_pi4pi4pi4_},
@@ -73802,6 +74242,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"oou4u4", (MethodPointer)b_oou4u4},
     {"os", (MethodPointer)b_os},
     {"os_i4i4_", (MethodPointer)b_os_i4i4_},
+    {"os_o_", (MethodPointer)b_os_o_},
     {"os_r4r4r4r4_o", (MethodPointer)b_os_r4r4r4r4_o},
     {"osi4o", (MethodPointer)b_osi4o},
     {"osooo", (MethodPointer)b_osooo},
@@ -73845,6 +74286,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"so", (MethodPointer)b_so},
     {"sob", (MethodPointer)b_sob},
     {"soo", (MethodPointer)b_soo},
+    {"sooO", (MethodPointer)b_sooO},
     {"sos", (MethodPointer)b_sos},
     {"ss", (MethodPointer)b_ss},
     {"ss_oi4osi4u1u1u1u1_", (MethodPointer)b_ss_oi4osi4u1u1u1u1_},
@@ -73878,6 +74320,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"vi4o", (MethodPointer)b_vi4o},
     {"vi4oi4i4", (MethodPointer)b_vi4oi4i4},
     {"vi4ooo", (MethodPointer)b_vi4ooo},
+    {"vi4os_r4r4r4_", (MethodPointer)b_vi4os_r4r4r4_},
     {"vi4popO", (MethodPointer)b_vi4popO},
     {"vi4popo", (MethodPointer)b_vi4popo},
     {"vi4s", (MethodPointer)b_vi4s},
@@ -73890,6 +74333,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"vi8o", (MethodPointer)b_vi8o},
     {"vo", (MethodPointer)b_vo},
     {"voO", (MethodPointer)b_voO},
+    {"voOPi4", (MethodPointer)b_voOPi4},
     {"vob", (MethodPointer)b_vob},
     {"voi4", (MethodPointer)b_voi4},
     {"voi4i4", (MethodPointer)b_voi4i4},
@@ -73951,6 +74395,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"vr4Ps_r4r4r4r4_Pr4Pr4", (MethodPointer)b_vr4Ps_r4r4r4r4_Pr4Pr4},
     {"vr4b", (MethodPointer)b_vr4b},
     {"vs", (MethodPointer)b_vs},
+    {"vsOi4", (MethodPointer)b_vsOi4},
     {"vs_Oi4_", (MethodPointer)b_vs_Oi4_},
     {"vs__", (MethodPointer)b_vs__},
     {"vs_i4_", (MethodPointer)b_vs_i4_},
@@ -73972,6 +74417,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"vs_i4ss_", (MethodPointer)b_vs_i4ss_},
     {"vs_i4u1u1_", (MethodPointer)b_vs_i4u1u1_},
     {"vs_i8i8_", (MethodPointer)b_vs_i8i8_},
+    {"vs_o_", (MethodPointer)b_vs_o_},
     {"vs_oo_", (MethodPointer)b_vs_oo_},
     {"vs_oob_", (MethodPointer)b_vs_oob_},
     {"vs_oooObr4r4r4r4bb_", (MethodPointer)b_vs_oooObr4r4r4r4bb_},
@@ -73999,6 +74445,7 @@ static BridgeFuncInfo g_bridgeFuncInfos[] = {
     {"vsbs", (MethodPointer)b_vsbs},
     {"vsbs_Pvi4i4i4pi4i4oi4i4i4i4_", (MethodPointer)b_vsbs_Pvi4i4i4pi4i4oi4i4i4i4_},
     {"vsi4", (MethodPointer)b_vsi4},
+    {"vsi4POPoPs_u8_Ps_i8_", (MethodPointer)b_vsi4POPoPs_u8_Ps_i8_},
     {"vsi8", (MethodPointer)b_vsi8},
     {"vso", (MethodPointer)b_vso},
     {"vsoo", (MethodPointer)b_vsoo},
