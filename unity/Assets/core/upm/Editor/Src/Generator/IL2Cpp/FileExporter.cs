@@ -12,7 +12,9 @@ using System.Text;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Puerts.Editor.Generator;
+#if !PUERTS_GENERAL
 using Mono.Reflection;
+#endif
 
 namespace PuertsIl2cpp.Editor
 {
@@ -154,7 +156,7 @@ namespace PuertsIl2cpp.Editor
                     "nunit.framework",
                     "UnityEditor.GraphViewModule",
                 };
-
+#if !PUERTS_GENERAL
                 foreach (var method in methodToWrap)
                 {
                     GenericArgumentInInstructions(method, typeInGenericArgument, processed, skipAssembles, mb =>
@@ -175,6 +177,7 @@ namespace PuertsIl2cpp.Editor
                         }
                     });
                 }
+#endif
 
                 var delegateToBridge = wrapperUsedTypes
                     .Concat(PuerDelegates)

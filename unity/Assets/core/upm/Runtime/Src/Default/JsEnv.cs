@@ -154,13 +154,13 @@ namespace Puerts
                             if (loader.FileExists(s)) {
                                 return s
                             } else {
-                                throw new Error(`module not found in js: ${originSp}`);
+                                throw new Error(`[Puer002]module not found in js: ${originSp}`);
                             }
 
                         } else {
                             let p = loader.Resolve(specifier, referer)
                             if (!p) {
-                                throw new Error(`module not found(1): ${originSp}`);
+                                throw new Error(`[Puer002]module not found: ${originSp}`);
                             }
                             return p;
                         }
@@ -171,7 +171,7 @@ namespace Puerts
 
                         const content = loader.ReadFile(specifier, debugpathRef);                    
                         if (!content) {
-                            throw new Error(`module not found(2): ${originSp}`);
+                            throw new Error(`[Puer003]module not found: ${originSp}`);
                         }
                         return content
                     }
@@ -220,18 +220,14 @@ namespace Puerts
                 {
                     OnDispose += ExecuteModule<Action>("puerts/dispose.mjs", "default");
                 }
-#if !PUERTS_GENERAL
                 if (!(Backend is BackendNodeJS)) 
                 {
-#endif
                     ExecuteModule("puerts/polyfill.mjs");
-#if !PUERTS_GENERAL
                 }
                 else
                 {
                     ExecuteModule("puerts/nodepatch.mjs");
                 }
-#endif
 
 #if UNITY_EDITOR
                 if (OnJsEnvCreate != null) 
