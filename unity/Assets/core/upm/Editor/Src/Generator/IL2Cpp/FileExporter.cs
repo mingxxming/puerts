@@ -19,20 +19,22 @@ using Mono.Reflection;
 namespace PuertsIl2cpp.Editor
 {
     namespace Generator {
+
         public class FileExporter {
             public static List<string> GetValueTypeFieldSignatures(Type type)
             {
-                List<string> ret = (type.BaseType != null && type.BaseType.IsValueType) ? GetValueTypeFieldSignatures(type.BaseType) : new List<string>();
+                List<string> ret = new List<string>();
+                if (type.BaseType != null && type.BaseType.IsValueType) ret.Add(PuertsIl2cpp.TypeUtils.GetTypeSignature(type.BaseType));
                 foreach (var field in type.GetFields(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                 {
-                    if ((field.FieldType.IsValueType && !field.FieldType.IsPrimitive))
-                    {
-                        ret.AddRange(GetValueTypeFieldSignatures(field.FieldType));
-                    }
-                    else
-                    {
+                    // if ((field.FieldType.IsValueType && !field.FieldType.IsPrimitive))
+                    // {
+                    //     ret.AddRange(GetValueTypeFieldSignatures(field.FieldType));
+                    // }
+                    // else
+                    // {
                         ret.Add(PuertsIl2cpp.TypeUtils.GetTypeSignature(field.FieldType));
-                    }
+                    // }
                 }
                 return ret;
             }
@@ -42,6 +44,7 @@ namespace PuertsIl2cpp.Editor
                 public string Signature;
                 public string CsName;
                 public List<string> FieldSignatures;
+                public int NullableHasValuePosition;
             }
 
             class SignatureInfo
@@ -92,6 +95,48 @@ namespace PuertsIl2cpp.Editor
                 {
                     GenericArgumentInInstructions(callingMethod, result, proceed, skipAssembles, callingMethodsGetter);
                 }
+            }
+
+            private static void IterateAllValueType(Type type, List<ValueTypeInfo> list)
+            {
+                if (type.IsPrimitive) {
+                    PuertsIl2cpp.TypeUtils.GetTypeSignature(type);
+                    return;
+                }
+                Type baseType = type.BaseType;
+                while (baseType != null && baseType != typeof(System.Object))
+                {
+                    if (baseType.IsValueType) {
+                        IterateAllValueType(baseType, list);
+                    }
+                    baseType = baseType.BaseType;
+                }
+                
+                foreach (var field in type.GetFields(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                {
+                    if (field.FieldType.IsValueType && !field.FieldType.IsPrimitive) IterateAllValueType(field.FieldType, list);
+                }
+
+                int value = -1;
+                if (Nullable.GetUnderlyingType(type) != null)
+                {
+                    var fields = type.GetFields(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    for (var i = 0; i < fields.Length; i++)
+                    {
+                        if (fields[i].Name == "hasValue" || fields[i].Name == "has_value") 
+                        {
+                            value = i;
+                            break;
+                        }
+                    }
+                }
+
+                list.Add(new ValueTypeInfo { 
+                    Signature = PuertsIl2cpp.TypeUtils.GetTypeSignature(type), 
+                    CsName = type.Name, 
+                    FieldSignatures = GetValueTypeFieldSignatures(type),
+                    NullableHasValuePosition = value
+                });
             }
 
             public static void GenCPPWrap(string saveTo, bool onlyConfigure = false)
@@ -191,9 +236,13 @@ namespace PuertsIl2cpp.Editor
                 var delegateUsedTypes = delegateInvokes.SelectMany(m => m.GetParameters()).Select(pi => GetUnrefParameterType(pi))
                     .Concat(delegateInvokes.Select(m => m.ReturnType));
 
-                var valueTypeInfos = wrapperUsedTypes.Concat(delegateUsedTypes)
-                    .Where(t => t.IsValueType && !t.IsPrimitive && !t.IsEnum)
-                    .Select(t => new ValueTypeInfo { Signature = PuertsIl2cpp.TypeUtils.GetTypeSignature(t), CsName = t.Name, FieldSignatures = GetValueTypeFieldSignatures(t) })
+                var valueTypeInfos = new List<ValueTypeInfo>();
+                foreach (var type in wrapperUsedTypes.Concat(delegateUsedTypes))
+                {
+                    IterateAllValueType(type, valueTypeInfos);
+                }
+                
+                valueTypeInfos = valueTypeInfos
                     .GroupBy(s => s.Signature)
                     .Select(s => s.FirstOrDefault())
                     .ToList();
@@ -229,6 +278,8 @@ namespace PuertsIl2cpp.Editor
                         .Where(t => !t.IsGenericTypeDefinition && !t.Name.StartsWith("<"))
                         .Distinct()
                         .ToList());
+
+                    // configureTypes.Clear();
                     
                     Utils.filters = Puerts.Configure.GetFilters();
                     
@@ -254,9 +305,13 @@ namespace PuertsIl2cpp.Editor
                         .Concat(genWrapperField.Select(f => f.FieldType))
                         .Distinct();
                     
-                    valueTypeInfos = configureUsedTypes.Concat(delegateUsedTypes)
-                        .Where(t => t.IsValueType && !t.IsPrimitive && !t.IsEnum)
-                        .Select(t => new ValueTypeInfo { Signature = PuertsIl2cpp.TypeUtils.GetTypeSignature(t), CsName = t.Name, FieldSignatures = GetValueTypeFieldSignatures(t) })
+                    valueTypeInfos = new List<ValueTypeInfo>();
+                    foreach (var type in configureUsedTypes.Concat(delegateUsedTypes))
+                    {
+                        IterateAllValueType(type, valueTypeInfos);
+                    }
+                    
+                    valueTypeInfos = valueTypeInfos
                         .GroupBy(s => s.Signature)
                         .Select(s => s.FirstOrDefault())
                         .ToList();
