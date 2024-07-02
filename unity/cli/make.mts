@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { cd, cp, exec, mkdir, mv, rm } from "@puerts/shell-util"
-import { basename, join, normalize } from "path";
+import { basename, join, normalize, dirname } from "path";
 import assert from "assert";
 import downloadBackend from "./backend.mjs";
 import { createRequire } from "module";
@@ -10,8 +10,8 @@ const glob = createRequire(fileURLToPath(import.meta.url))('glob');
 
 interface BuildOptions {
     config: 'Debug' | 'Release' | "RelWithDebInfo",
-    platform: 'osx' | 'win' | 'ios' | 'android' | 'linux' | 'ohos',
-    arch: 'x64' | 'ia32' | 'armv7' | 'arm64' | 'auto',
+    platform: 'osx' | 'win' | 'ios' | 'android' | 'linux' | 'ohos' | 'wasm',
+    arch: 'x64' | 'ia32' | 'armv7' | 'arm64' | 'wasm32' | 'auto',
     backend: string
 }
 
@@ -193,6 +193,19 @@ const platformCompileConfig = {
                 return `${CMAKE_BUILD_PATH}/lib${cmakeAddedLibraryName}.so`;
             }
         }
+    },
+    'wasm': {
+        'wasm32': {
+            outputPluginPath: 'WebGL',
+            hook: function (CMAKE_BUILD_PATH: string, options: BuildOptions, cmakeAddedLibraryName: string, cmakeDArgs: string) {
+                cd(CMAKE_BUILD_PATH);
+                assert.equal(0, exec(`emcmake cmake ${cmakeDArgs} -DJS_ENGINE=${options.backend} -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON -DCMAKE_BUILD_TYPE=${options.config} ..`).code)
+                assert.equal(0, exec(`emmake make`).code)
+                cd("..")
+
+                return `${CMAKE_BUILD_PATH}/lib${cmakeAddedLibraryName}.a`;
+            }
+        }
     }
 }
 
@@ -224,7 +237,8 @@ async function runPuertsMake(cwd: string, options: BuildOptions) {
     const BuildConfig = (platformCompileConfig as any)[options.platform][options.arch];
     const CMAKE_BUILD_PATH = cwd + `/build_${options.platform}_${options.arch}_${options.backend}${options.config != "Release" ? "_debug" : ""}`
     const OUTPUT_PATH = cwd + '/../Assets/core/upm/Plugins/' + BuildConfig.outputPluginPath;
-    const BackendConfig = JSON.parse(readFileSync(cwd + `/cmake/backends.json`, 'utf-8'))[options.backend]?.config;
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const BackendConfig = JSON.parse(readFileSync(join(__dirname, 'backends.json'), 'utf-8'))[options.backend]?.config;
 
     if (BackendConfig?.skip?.[options.platform]?.[options.arch]) {
         console.log("=== Puer ===");
