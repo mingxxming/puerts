@@ -316,7 +316,7 @@ export function CSValToJSVal(signature, CSName) {
         return `converter::Converter<${PrimitiveSignatureCppTypeMap[signature]}>::toScript(apis, env, ${CSName})`;
     } else if (signature == 'O') { // System.Object
         return `CSRefToJsValue(apis, env, ${TIName}, ${CSName})`;
-    } else if (signature == 'o') { // classes except System.Object
+    } else if (signature == 'o' || signature == "Do") { // classes except System.Object
         return `CSRefToJsValue(apis, env, ${TIName}, ${CSName})`;
     } else if (signature == 'a') { // ArrayBuffer
         return `CSRefToJsValue(apis, env, ${TIName}, ${CSName})`;
